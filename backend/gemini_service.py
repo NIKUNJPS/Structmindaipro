@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 MODEL_CHAIN: list[str] = [
     "gemini-2.5-pro",
     "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
 ]
 
 
