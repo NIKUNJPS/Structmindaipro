@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
 import {
     ArrowRight,
     Boxes,
     CircleDot,
     FolderKanban,
     MessageSquareQuote,
+    Play,
     Sparkles,
     TrendingUp,
+    UserCog,
 } from "lucide-react";
 import {
     Area,
@@ -33,20 +36,30 @@ const TIER_LABELS = {
 
 const COLORS = ["#f5a800", "#0d2240", "#1a3a5c", "#ffd166", "#6b8299", "#16a34a", "#ef4444"];
 
-function StatCard({ label, value, trend, icon: Icon, testId }) {
+function StatCard({ label, value, trend, icon: Icon, testId, delay = 0 }) {
     return (
-        <div
+        <motion.div
             data-testid={testId}
-            className="card-steel relative flex flex-col justify-between p-6"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}
+            whileHover={{ y: -4 }}
+            className="card-steel relative flex flex-col justify-between p-6 hover-lift"
         >
+            <div className="absolute left-0 top-0 h-[3px] w-full origin-left scale-x-0 bg-gold transition-transform duration-500 group-hover:scale-x-100" />
             <div className="flex items-start justify-between">
                 <div>
                     <div className="font-mono text-[11px] uppercase tracking-[0.24em] text-ink-muted">
                         {label}
                     </div>
-                    <div className="mt-3 font-heading text-5xl font-black leading-none text-navy">
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.6, delay: delay + 0.15 }}
+                        className="mt-3 font-heading text-5xl font-black leading-none text-navy"
+                    >
                         {value}
-                    </div>
+                    </motion.div>
                 </div>
                 <div className="border border-ink-line p-2">
                     <Icon size={18} className="text-gold" />
@@ -58,7 +71,7 @@ function StatCard({ label, value, trend, icon: Icon, testId }) {
                     {trend}
                 </div>
             )}
-        </div>
+        </motion.div>
     );
 }
 
@@ -88,7 +101,7 @@ export default function Dashboard() {
                 <div className="flex items-end justify-between">
                     <div>
                         <div className="text-overline">Welcome back</div>
-                        <h1 className="mt-2 font-heading text-5xl font-black uppercase leading-none tracking-tight text-navy">
+                        <h1 className="mt-2 font-heading text-5xl font-black leading-none tracking-tight text-navy">
                             {user?.first_name} {user?.last_name}
                         </h1>
                         <div className="mt-3 flex items-center gap-3 font-mono text-xs uppercase tracking-wider text-ink-muted">
@@ -109,6 +122,10 @@ export default function Dashboard() {
                             <FolderKanban size={14} />
                             New Project
                         </Link>
+                        <Link to="/roles" className="btn-ghost-navy" data-testid="dashboard-role-guide">
+                            <UserCog size={14} />
+                            Role Guide
+                        </Link>
                         <Link to="/analyze" className="btn-gold" data-testid="dashboard-quick-analyze">
                             <Sparkles size={14} />
                             Quick Analyze
@@ -118,7 +135,46 @@ export default function Dashboard() {
                 </div>
             </div>
 
+            {/* CONTENT */}
             <div className="container-steel py-10">
+                {/* ROLE GUIDE CALLOUT */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.3 }}
+                    className="mb-8 overflow-hidden border border-navy bg-navy text-white"
+                >
+                    <div className="relative p-6 md:p-8">
+                        <div className="absolute inset-0 tech-grid opacity-30" />
+                        <div className="relative flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+                            <div className="flex items-start gap-4">
+                                <div className="flex h-12 w-12 items-center justify-center border border-gold/50 bg-gold/10">
+                                    <Play size={18} className="text-gold" fill="currentColor" />
+                                </div>
+                                <div>
+                                    <div className="text-overline">Demo console</div>
+                                    <div className="mt-1 font-heading text-2xl font-bold leading-tight text-white md:text-3xl">
+                                        Flex all 25 AI modes — zero drawings required.
+                                    </div>
+                                    <p className="mt-2 max-w-xl text-sm text-white/70">
+                                        Pick a role, hit <span className="text-gold">Demo</span>,
+                                        watch STRUCTMIND CORE spin up a full, role-specific report
+                                        with every export format.
+                                    </p>
+                                </div>
+                            </div>
+                            <Link
+                                to="/roles"
+                                data-testid="dashboard-open-role-guide"
+                                className="btn-gold flex-shrink-0"
+                            >
+                                Open Role Guide
+                                <ArrowRight size={14} />
+                            </Link>
+                        </div>
+                    </div>
+                </motion.div>
+
                 {/* STATS */}
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
                     {loading
@@ -364,3 +420,4 @@ function StatusPill({ status }) {
         </span>
     );
 }
+

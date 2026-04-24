@@ -1,7 +1,8 @@
-"""Seed the super-admin account on startup (idempotent)."""
+"""Seed super-admin account(s) on startup (idempotent)."""
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 
 from config import settings
@@ -11,43 +12,41 @@ from security import hash_password, sha256_hex
 logger = logging.getLogger(__name__)
 
 
-async def seed_admin() -> None:
-    if not (settings.admin_email and settings.admin_password):
-        logger.info("Seed admin: no credentials configured")
+async def _upsert_admin(email: str, password: str, first: str, last: str) -> None:
+    if not (email and password):
         return
-
     db = get_db()
-    existing = await db.users.find_one({"email": settings.admin_email.lower()})
     now = datetime.now(timezone.utc).isoformat()
+    enterprise_limits = {
+        "analyses_per_month": 10000,
+        "max_file_size_mb": 500,
+        "modes_available": ["*"],
+    }
+    existing = await db.users.find_one({"email": email.lower()})
     if existing:
-        # Ensure admin role + verified + active
         await db.users.update_one(
-            {"email": settings.admin_email.lower()},
+            {"email": email.lower()},
             {
                 "$set": {
                     "role": "admin",
                     "is_verified": True,
                     "is_active": True,
                     "subscription_tier": "enterprise",
-                    "limits": {
-                        "analyses_per_month": 10000,
-                        "max_file_size_mb": 500,
-                        "modes_available": ["*"],
-                    },
+                    "limits": enterprise_limits,
                     "updated_at": now,
                 }
             },
         )
-        logger.info("Seed admin: updated existing %s to admin", settings.admin_email)
+        logger.info("Seed admin · refreshed %s", email)
         return
 
-    uid = sha256_hex(f"admin:{settings.admin_email}:{now}")[:32]
+    uid = sha256_hex(f"admin:{email}:{now}")[:32]
     doc = {
         "id": uid,
-        "email": settings.admin_email.lower(),
-        "password_hash": hash_password(settings.admin_password),
-        "first_name": settings.admin_first_name,
-        "last_name": settings.admin_last_name,
+        "email": email.lower(),
+        "password_hash": hash_password(password),
+        "first_name": first,
+        "last_name": last,
         "company": "4XStruct Inc.",
         "country": "India",
         "role": "admin",
@@ -57,9 +56,24 @@ async def seed_admin() -> None:
         "is_active": True,
         "subscription_tier": "enterprise",
         "usage_this_month": {"analyses": 0, "files_processed": 0, "total_file_size_mb": 0},
-        "limits": {"analyses_per_month": 10000, "max_file_size_mb": 500, "modes_available": ["*"]},
+        "limits": enterprise_limits,
         "created_at": now,
         "updated_at": now,
     }
     await db.users.insert_one(doc)
-    logger.info("Seed admin: created %s", settings.admin_email)
+    logger.info("Seed admin · created %s", email)
+
+
+async def seed_admin() -> None:
+    await _upsert_admin(
+        settings.admin_email,
+        settings.admin_password,
+        settings.admin_first_name,
+        settings.admin_last_name,
+    )
+    await _upsert_admin(
+        os.environ.get("ADMIN_EMAIL_2", ""),
+        os.environ.get("ADMIN_PASSWORD_2", ""),
+        os.environ.get("ADMIN_FIRST_NAME_2", "Admin"),
+        os.environ.get("ADMIN_LAST_NAME_2", "User"),
+    )

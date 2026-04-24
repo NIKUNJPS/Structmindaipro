@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from ai_modes import MODES, list_modes_for_role, mode_label
 from config import settings
 from db import get_db
+from demo_prompts import get_demo_prompt
 from export_service import EXPORT_DIR, generate_all_exports
 from gemini_service import run_analysis
 from models import AnalysisCreate
@@ -72,11 +73,7 @@ async def _run_analysis_task(analysis_id: str):
             raise RuntimeError(
                 "No LLM key configured. Set GEMINI_API_KEY or EMERGENT_LLM_KEY in /app/backend/.env"
             )
-        text_prompt = analysis.get("input_text") or (
-            "Analyse the attached project package per your system instructions."
-            if file_pairs
-            else "Generate a high-quality analysis using realistic structural steel detailing assumptions for a representative mid-size US fabrication scope (~180 tons, 3-storey steel-framed building)."
-        )
+        text_prompt = analysis.get("input_text") or get_demo_prompt(analysis["mode"])
         output, model_used = await run_analysis(
             session_id=analysis_id,
             system_prompt=mode["prompt"],
@@ -168,10 +165,69 @@ async def _run_analysis_task(analysis_id: str):
 
 @router.get("/modes")
 async def list_modes(user=Depends(get_current_user)):
-    return {"modes": list_modes_for_role(user["role"]), "groups": [
+    items = list_modes_for_role(user["role"])
+    for m in items:
+        m["demo_prompt"] = get_demo_prompt(m["id"])
+    return {"modes": items, "groups": [
         "Project Intake", "Quality Control", "Quantification", "Commercial",
         "Scheduling", "Specialist", "Assistant",
     ]}
+
+
+@router.post("/demo")
+async def run_demo(
+    payload: dict,
+    background: BackgroundTasks,
+    user=Depends(get_current_user),
+):
+    """Fire a demo analysis for a given mode using the canned representative prompt.
+    Admins bypass role-lock so they can demo every mode. Intended for the Role Guide / demo console.
+    """
+    db = get_db()
+    mode_id = payload.get("mode")
+    if mode_id not in MODES:
+        raise HTTPException(status_code=400, detail="Unknown mode")
+    mode = MODES[mode_id]
+
+    # Admins can demo every mode; everyone else gets role-locked
+    if user["role"] != "admin" and user["role"] not in mode["roles"]:
+        raise HTTPException(status_code=403, detail="Your role cannot run this mode")
+
+    full = await db.users.find_one({"id": user["id"]})
+    limit = full.get("limits", {}).get("analyses_per_month", 5)
+    used = full.get("usage_this_month", {}).get("analyses", 0)
+    if used >= limit and user["role"] != "admin":
+        raise HTTPException(status_code=402, detail=f"Monthly analysis limit reached ({limit}).")
+
+    now = _now_iso()
+    aid = sha256_hex(f"demo:{user['id']}:{mode_id}:{now}")[:24]
+    doc = {
+        "id": aid,
+        "project_id": None,
+        "file_ids": [],
+        "requested_by": user["id"],
+        "requested_by_name": f"{full.get('first_name','')} {full.get('last_name','')}".strip(),
+        "mode": mode_id,
+        "mode_label": mode["label"],
+        "status": "queued",
+        "stage": "queued",
+        "model_used": "",
+        "input_text": get_demo_prompt(mode_id),
+        "is_demo": True,
+        "output_markdown": "",
+        "processing_time_seconds": 0,
+        "issues_found": {"critical": 0, "major": 0, "minor": 0, "total": 0},
+        "quality_score": 0,
+        "blockchain_hash": "",
+        "exports": [],
+        "error_message": "",
+        "created_at": now,
+        "completed_at": None,
+    }
+    await db.analyses.insert_one(doc)
+    background.add_task(_run_analysis_task, aid)
+    doc.pop("_id", None)
+    return doc
 
 
 @router.post("")

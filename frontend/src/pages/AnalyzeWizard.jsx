@@ -134,7 +134,7 @@ export default function AnalyzeWizard() {
         <div className="min-h-full bg-background">
             <div className="border-b border-ink-line bg-white px-10 py-10">
                 <div className="text-overline">Analysis wizard</div>
-                <h1 className="mt-2 font-heading text-5xl font-black uppercase leading-none tracking-tight text-navy">
+                <h1 className="mt-2 font-heading text-5xl font-black leading-none tracking-tight text-navy">
                     Submit design package
                 </h1>
                 <p className="mt-3 max-w-3xl text-ink-muted">

@@ -14,6 +14,7 @@ import {
     Settings,
     ShieldHalf,
     Sparkles,
+    UserCog,
     Users,
 } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
@@ -35,6 +36,7 @@ const NAV = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/projects", label: "Projects", icon: FolderKanban },
     { to: "/analyze", label: "Analyze", icon: Sparkles, accent: true },
+    { to: "/roles", label: "Role Guide", icon: UserCog },
     { to: "/rfi-tracker", label: "RFI Tracker", icon: MessageSquareQuote },
     { to: "/outputs", label: "Outputs", icon: Download },
     { to: "/risk-dashboard", label: "Risk Console", icon: ShieldHalf },

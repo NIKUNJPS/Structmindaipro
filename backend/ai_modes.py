@@ -429,6 +429,7 @@ def list_modes_for_role(role: str) -> list[dict]:
                 "time": m["time"],
                 "pro": m["pro"],
                 "description": m["description"],
+                "roles": m["roles"],
                 "allowed": role == "admin" or role in m["roles"],
             }
         )

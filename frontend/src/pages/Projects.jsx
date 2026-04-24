@@ -63,7 +63,7 @@ export default function Projects() {
                 <div className="flex items-end justify-between">
                     <div>
                         <div className="text-overline">Projects</div>
-                        <h1 className="mt-2 font-heading text-5xl font-black uppercase leading-none tracking-tight text-navy">
+                        <h1 className="mt-2 font-heading text-5xl font-black leading-none tracking-tight text-navy">
                             All projects
                         </h1>
                     </div>

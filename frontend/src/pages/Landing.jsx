@@ -235,13 +235,13 @@ export default function Landing() {
                             <CircleDot size={12} />
                             AISC 16th Ed · AWS D1.1 · SSPC · OSHA
                         </div>
-                        <h1 className="font-heading text-[56px] font-black uppercase leading-[0.95] tracking-tight text-white md:text-[92px]">
-                            STRUCT<span className="text-gold">MIND</span>
+                        <h1 className="font-heading text-[56px] font-black leading-[0.95] tracking-tight text-white md:text-[92px]">
+                            Struct<span className="text-gold">Mind</span>
                             <span className="block font-mono text-sm font-medium uppercase tracking-[0.3em] text-white/70 md:text-base">
-                                Structural Intelligence · Built on Gemini 2.5 Pro
+                                Structural Intelligence · 4X Neural Core Engine
                             </span>
                         </h1>
-                        <p className="mt-8 max-w-xl font-heading text-xl font-light uppercase leading-snug tracking-wide text-white/80 md:text-2xl">
+                        <p className="mt-8 max-w-xl font-heading text-xl font-light leading-snug text-white/80 md:text-2xl">
                             The world's most advanced AI platform for structural steel
                             detailing, estimation, and fabrication intelligence.
                         </p>
@@ -781,7 +781,7 @@ export default function Landing() {
                         © {new Date().getFullYear()} 4XStruct Inc. · All rights reserved.
                     </div>
                     <div className="font-mono uppercase tracking-wider">
-                        Built on Gemini 2.5 Pro · SHA-256 audit trail
+                        STRUCTMIND CORE engine · SHA-256 audit trail
                     </div>
                 </div>
             </footer>

@@ -109,7 +109,7 @@ export default function Signup() {
                         </p>
                     </div>
                     <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-white/50">
-                        SHA-256 audit trail · Gemini 2.5 Pro · SOC-2 roadmap
+                        SHA-256 audit trail · STRUCTMIND CORE · SOC-2 roadmap
                     </div>
                 </div>
             </div>
@@ -120,7 +120,7 @@ export default function Signup() {
                     <div className="mb-6 md:hidden">
                         <Logo variant="dark" size="md" />
                     </div>
-                    <h1 className="font-heading text-4xl font-black uppercase leading-tight tracking-tight text-navy">
+                    <h1 className="font-heading text-4xl font-black leading-tight tracking-tight text-navy">
                         Create your account
                     </h1>
                     <p className="mt-2 text-sm text-ink-muted">

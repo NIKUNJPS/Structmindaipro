@@ -65,7 +65,7 @@ export default function Outputs() {
         <div className="min-h-full bg-background">
             <div className="border-b border-ink-line bg-white px-10 py-10">
                 <div className="text-overline">Outputs & Exports</div>
-                <h1 className="mt-2 font-heading text-5xl font-black uppercase leading-none tracking-tight text-navy">
+                <h1 className="mt-2 font-heading text-5xl font-black leading-none tracking-tight text-navy">
                     Your reports
                 </h1>
                 <div className="relative mt-5 max-w-md">

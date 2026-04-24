@@ -61,7 +61,7 @@ export default function ProjectDetail() {
                 <div className="flex items-end justify-between">
                     <div>
                         <div className="text-overline">Project</div>
-                        <h1 className="mt-2 font-heading text-5xl font-black uppercase leading-none tracking-tight text-navy">
+                        <h1 className="mt-2 font-heading text-5xl font-black leading-none tracking-tight text-navy">
                             {project.name}
                         </h1>
                         <p className="mt-3 max-w-2xl text-ink-muted">

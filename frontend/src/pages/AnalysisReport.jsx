@@ -286,7 +286,7 @@ export default function AnalysisReport() {
                 <div className="flex flex-wrap items-end justify-between gap-6">
                     <div>
                         <div className="text-overline">Analysis report</div>
-                        <h1 className="mt-2 font-heading text-4xl font-black uppercase leading-none tracking-tight text-navy md:text-5xl">
+                        <h1 className="mt-2 font-heading text-4xl font-black leading-none tracking-tight text-navy md:text-5xl">
                             {analysis.mode_label}
                         </h1>
                         <div className="mt-3 flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-wider text-ink-muted">

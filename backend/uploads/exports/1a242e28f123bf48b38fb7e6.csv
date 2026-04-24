@@ -1,0 +1,31 @@
+section,type,content
+p,p,STRUCTMIND AI: Structural Clash Detection Report
+p,p,"Project: Representative 3D Structural Model Report Date: October 26, 2023 Model Revision: REV-02 Analysis Scope: Hard Clashes, Soft Clashes (Assumed 1/2"" Erection Clearance), Cross-Trade (L2 Mech. Room), Connection Access"
+p,p,---
+h3,h3,Executive Summary
+p,p,"Analysis of the representative 3D structural model (8x7 grid, 3 levels) has been completed. The automated clash detection process identified a total of 5 significant clashes requiring coordination and resolution. Findings include one critical hard clash, one high-priority tool clearance issue, two high-priority cross-trade clashes in the Level 2 Mechanical Room, and one medium-priority soft clash."
+p,p,Immediate action is required from the structural and MEP teams to address the critical and high-priority items to avoid fabrication errors and field rework. The following report details each identified clash category and provides a comprehensive clash table with recommended resolutions.
+p,p,---
+h3,h3,1.0 Hard Clashes (Member-to-Member Interference)
+p,p,A hard clash represents a direct physical interference between two or more solid model elements. These are critical issues that must be resolved prior to fabrication.
+li,li,Finding: A vertical brace gusset plate at the column-beam intersection on Level 3 directly interferes with the top flange of an infill beam. The gusset plate geometry was not clipped to accommodate the incoming beam. Location: Level 3 @ Grid D-5 Severity: Critical
+h3,h3,2.0 Soft Clashes (Clearance Violations)
+p,p,"A soft clash occurs when the clearance between elements violates a predefined rule, such as required space for installation, fireproofing, or maintenance. For this analysis, a minimum erection/fireproofing clearance of 1/2"" (12.7mm) was assumed."
+li,li,"Finding: Two parallel infill beams have been modeled with a 1/4"" gap between their flanges. This is insufficient for proper spray-applied fireproofing and violates standard erection tolerance. Location: Level 2, between Grids F-3 and F-4 Severity: Medium"
+h3,h3,3.0 Cross-Trade Clashes (Structural vs. MEP)
+p,p,"These clashes involve interference between the structural frame and other disciplines, such as Mechanical, Electrical, and Plumbing. The analysis focused on the designated Level 2 Mechanical Room."
+li,li,"Finding 1: A large rectangular HVAC supply duct (48""x24"") runs directly through the web of a primary W30x108 girder. No web penetration has been designed or detailed. Location: Level 2 Mechanical Room @ Grid B-3 Severity: High"
+li,li,"Finding 2: A 6"" Fire Protection main pipe is modeled with its top-of-pipe elevation conflicting with the bottom flange of multiple W18x50 floor beams. The pipe run has zero clearance. Location: Level 2 Mechanical Room, running along Grid Line C between C-2 and C-5 Severity: High"
+h3,h3,4.0 Connection & Tool Clearance Violations
+p,p,"This check ensures adequate space is available for bolting, welding, and tool access during erection. The focus was on moment end-plate connections as requested."
+li,li,Finding: A W24x94 beam frames into the web of a W14x120 column with a moment end-plate connection. The proximity of the column flange provides insufficient clearance for an impact wrench to access and tighten the bolts on the flange side of the connection. Location: Level 2 @ Grid A-4 Severity: High
+p,p,---
+h3,h3,Clash Resolution Table
+table-row,row,Clash ID | Zone / Location | Members Involved | Severity | Recommended Resolution
+table-row,row,"**CL-001** | Level 3 @ Grid D-5 | **STRUCT:** HSS 8x8 Brace Gusset Plate<br>**STRUCT:** W18x50 Beam Top Flange | **CRITICAL** | **Structural Detailer:** Revise gusset plate geometry. Apply a 2""x2"" corner clip to the gusset to clear the beam flange. Issue revised fabrication drawing."
+table-row,row,"**CL-002** | Level 2 @ Grid A-4 | **STRUCT:** W24x94 Beam End Plate Bolts<br>**STRUCT:** W14x120 Column Flange | **HIGH** | **Connection Engineer:** Review connection. Options: 1) Shift beam centerline away from flange if architecturally possible. 2) Change to a welded-flange, bolted-web connection. 3) Specify use of tension-control bolts with a shear wrench."
+table-row,row,"**CL-003** | Level 2 Mech. Room @ Grid B-3 | **STRUCT:** W30x108 Girder Web<br>**MEP:** 48""x24"" HVAC Supply Duct | **HIGH** | **MEP & Structural Teams:** MEP to attempt re-routing ductwork below the girder. If not feasible, Structural Engineer must design and detail a framed web penetration with stiffeners."
+table-row,row,"**CL-004** | Level 2 Mech. Room @ Grids C-2 to C-5 | **STRUCT:** W18x50 Beam Bottom Flanges<br>**MEP:** 6"" Fire Protection Main Pipe | **HIGH** | **MEP Coordinator:** Lower the top-of-pipe elevation for the entire run by a minimum of 4"" to provide clearance below all affected beam flanges. Update MEP model."
+table-row,row,"**CL-005** | Level 2 @ Grids F-3 to F-4 | **STRUCT:** W16x31 Beam Flange<br>**STRUCT:** W16x31 Beam Flange | **MEDIUM** | **Structural Detailer:** Adjust framing plan to increase spacing between beams to a minimum of 2"" flange-to-flange to allow for fireproofing application."
+p,p,--- End of Report
+p,p,STRUCTMIND AI | Structural Integrity Analysis Unit

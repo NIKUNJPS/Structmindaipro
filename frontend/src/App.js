@@ -21,6 +21,7 @@ import AnalysisReport from "@/pages/AnalysisReport";
 import RfiKanban from "@/pages/RfiKanban";
 import Outputs from "@/pages/Outputs";
 import RiskDashboard from "@/pages/RiskDashboard";
+import RoleGuide from "@/pages/RoleGuide";
 import { SettingsProfile, SettingsSecurity } from "@/pages/Settings";
 import { AdminUsers, AdminAuditLog } from "@/pages/Admin";
 
@@ -109,6 +110,14 @@ export default function App() {
                         element={
                             <AppRoute>
                                 <RfiKanban />
+                            </AppRoute>
+                        }
+                    />
+                    <Route
+                        path="/roles"
+                        element={
+                            <AppRoute>
+                                <RoleGuide />
                             </AppRoute>
                         }
                     />

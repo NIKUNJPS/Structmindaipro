@@ -31,7 +31,7 @@ def _html_wrap(title: str, body_html: str) -> str:
         </tr>
         <tr><td style="padding:32px">{body_html}</td></tr>
         <tr><td style="padding:24px 32px;background:#f7f9fc;border-top:1px solid #e2eaf2;font-size:12px;color:#6b8299">
-          Powered by 4XStruct Inc. · Structural Intelligence · Built on Gemini 2.5 Pro<br/>
+          Powered by 4XStruct Inc. · Structural Intelligence · STRUCTMIND CORE engine<br/>
           If you did not request this email, you can safely ignore it.
         </td></tr>
       </table>

@@ -30,7 +30,7 @@ function AdminLayout({ children }) {
         <div className="min-h-full bg-background">
             <div className="border-b border-ink-line bg-white px-10 py-10">
                 <div className="text-overline">Admin Console</div>
-                <h1 className="mt-2 font-heading text-5xl font-black uppercase leading-none tracking-tight text-navy">
+                <h1 className="mt-2 font-heading text-5xl font-black leading-none tracking-tight text-navy">
                     Platform control
                 </h1>
                 <div className="mt-6 flex gap-6 border-b border-ink-line">

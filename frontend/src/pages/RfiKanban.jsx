@@ -57,7 +57,7 @@ export default function RfiKanban() {
                 <div className="flex items-end justify-between">
                     <div>
                         <div className="text-overline">RFI Tracker</div>
-                        <h1 className="mt-2 font-heading text-5xl font-black uppercase leading-none tracking-tight text-navy">
+                        <h1 className="mt-2 font-heading text-5xl font-black leading-none tracking-tight text-navy">
                             Kanban board
                         </h1>
                         <p className="mt-2 text-sm text-ink-muted">

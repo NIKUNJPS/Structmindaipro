@@ -1,0 +1,29 @@
+section,type,content
+p,p,COMMENCING ANALYSIS... STRUCTMIND AI: Structural Clash Detection Protocol Engaged.
+p,p,"Project: Representative 3D Model (8x7 Grid, 3 Levels) Scope: Hard, Soft, Cross-Trade (MEP), and Connection Clearance Clashes Analysis Date: 2023-10-27"
+p,p,---
+h3,h3,Executive Summary
+p,p,"Analysis of the representative 3D steel model is complete. A total of 114 potential clashes were identified. The following report details four high-priority examples, representative of the clash types found throughout the structure. The full clash log is summarized in the table below."
+li,li,"Critical Clashes: 2 (Requires immediate design review) High Severity Clashes: 19 (Requires design/detailing modification) Medium Severity Clashes: 48 (Typically constructability or clearance issues) Low Severity / Informational: 45 (Minor issues, for review)"
+p,p,"The most significant issues are concentrated in the Level-2 Mechanical Room and at moment frame connections, requiring urgent cross-disciplinary coordination."
+p,p,---
+h3,h3,Detailed Clash Report: Representative Examples
+p,p,#### 1. Hard Clash (Steel-to-Steel Interference)
+li,li,"Clash ID: C-001 Location: Level 2, Grid E-4 Involved Members: Member 1: W18x50 Infill Beam Member 2: W24x76 Primary Girder Description: The W18x50 infill beam running along Grid E frames directly into the web of the W24x76 girder on Grid 4. The top and bottom flanges of the W18x50 fully intersect the web of the W24x76. No cope or connection detail is present in the model, resulting in a direct physical interference. Severity: High Implication: Fabrication is impossible as modeled. The beam cannot be erected."
+p,p,---
+p,p,#### 2. Soft Clash (Minimum Clearance Violation)
+li,li,"Clash ID: C-028 Location: Level 3, Braced Bay at Grid G-2 Involved Members: Member 1: Gusset Plate for HSS 6x6 Brace Member 2: W14x90 Column Flange Description: The corner of the gusset plate connecting the HSS brace to the beam-column joint is located 0.75 inches from the interior face of the W14x90 column's flange. Project specification requires a minimum of 2 inches clearance for the application of spray-applied fire-resistive materials (SFRM). Severity: Medium Implication: Fireproofing cannot be applied to the code-required thickness in this zone, potentially failing inspection."
+p,p,---
+p,p,#### 3. Cross-Trade Clash (Structural vs. MEP)
+li,li,"Clash ID: C-055 Location: Level 2, Mechanical Room (Zone between Grids C/D and 3/4) Involved Systems: System 1 (Structural): W30x108 Girder System 2 (MEP): 30"" x 24"" HVAC Main Supply Duct Description: A primary HVAC duct runs perpendicular to the W30x108 girder and is modeled to pass directly through its web. The structural model does not include a specified web penetration opening. The 24"" vertical dimension of the duct clashes with approximately 80% of the girder's web depth. Severity: Critical Implication: Major coordination failure. Either the HVAC route must be significantly altered (impacting headroom and other services), or the structural girder requires a large, reinforced opening, which must be designed and verified by the Structural Engineer of Record. This is a significant cost and schedule risk."
+p,p,---
+p,p,#### 4. Connection Clearance Clash (Tool/Bolt Access)
+li,li,"Clash ID: C-081 Location: Level 2, Moment Frame at Grid A-5 Involved Members: Member 1: W21x62 Beam with 8-Bolt Moment End-Plate Connection Member 2: W14x120 Column Description: The W21x62 beam frames into the web of the W14x120 column. The bolts on the end-plate connection are positioned too close to the column's interior flange faces. Standard impact wrenches require approximately 2.5-3 inches of clearance for the socket head, but the modeled clearance is only 1.5 inches. Severity: Medium Implication: The bolts cannot be properly installed or tensioned using standard tools. This will cause significant field delays and may require the use of specialized (and slower) torque wrenches or potential rework of the connection. This is a major constructability issue."
+p,p,---
+h3,h3,Clash Resolution Table (High-Priority Summary)
+table-row,row,Clash ID | Zone (Grid/Level) | Involved Members / Systems | Clash Type / Severity | Description & Recommended Resolution
+table-row,row,"**C-001** | Grid E-4, Level 2 | W18x50 Beam vs. W24x76 Girder Web | **Hard Clash / High** | **Description:** Beam flanges and web fully intersect girder web. <br> **Resolution:** Detailer to apply standard cope to top and bottom flanges of W18x50 and connect to girder web with a shear tab."
+table-row,row,"**C-028** | Grid G-2, Level 3 | Gusset Plate vs. W14x90 Column Flange | **Soft Clash / Medium** | **Description:** Insufficient clearance (0.75"") for fireproofing (2"" req'd). <br> **Resolution:** Detailer to clip the gusset plate corner or adjust brace work point to achieve required clearance."
+table-row,row,"**C-055** | Grids C/D-3/4, Level 2 | 30""x24"" HVAC Duct vs. W30x108 Girder Web | **MEP Clash / Critical** | **Description:** Large HVAC duct passes through un-reinforced girder web. <br> **Resolution:** **URGENT:** MEP and Structural leads to coordinate. Options: 1) Reroute duct below girder. 2) EOR to design framed web opening."
+table-row,row,"**C-081** | Grid A-5, Level 2 | End-Plate Bolts vs. W14x120 Column Flange | **Tool Clearance / Medium** | **Description:** Insufficient space for impact wrench to tension bolts. <br> **Resolution:** Detailer to review connection. Options: 1) Reduce bolt gauge. 2) Confirm field can use specialized tooling."
+p,p,--- ANALYSIS COMPLETE. Awaiting further instructions. Full clash report available for distribution to the project team.

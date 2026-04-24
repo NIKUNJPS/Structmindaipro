@@ -5,7 +5,7 @@ module.exports = {
     theme: {
         extend: {
             fontFamily: {
-                heading: ["'Barlow Condensed'", "sans-serif"],
+                heading: ["'Sora'", "sans-serif"],
                 body: ["'IBM Plex Sans'", "sans-serif"],
                 mono: ["'JetBrains Mono'", "monospace"],
                 sans: ["'IBM Plex Sans'", "sans-serif"],

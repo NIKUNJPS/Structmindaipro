@@ -110,7 +110,7 @@ export default function Login() {
                     <div className="mb-8 md:hidden">
                         <Logo variant="dark" size="md" />
                     </div>
-                    <h1 className="font-heading text-4xl font-black uppercase leading-tight tracking-tight text-navy">
+                    <h1 className="font-heading text-4xl font-black leading-tight tracking-tight text-navy">
                         Welcome back
                     </h1>
                     <p className="mt-2 text-sm text-ink-muted">
