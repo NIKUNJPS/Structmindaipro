@@ -1,0 +1,103 @@
+section,type,content
+h3,h3,"MASTER INTAKE AUDIT: 3-STOREY OFFICE TOWER (DENVER, CO)"
+p,p,*
+h3,h3,A. EXECUTIVE SUMMARY
+p,p,"This audit covers the structural and miscellaneous steel package for a three-story, 220-ton commercial office building in Denver, CO. The structural system is a composite deck over steel framing with moment frames and HSS concentric braced frames. The project's primary risks are the tight tolerances required for the 5'-6"" long anchor bolts and achieving the specified AESS Category 2 finish on lobby columns. The primary opportunity lies in the repetitive framing, which is well-suited for automated fabrication, enabling potential schedule compression if anchor bolt and AESS risks are managed proactively through early coordination."
+h3,h3,B. DETAILING LAYER
+p,p,#### Drawing Index A complete drawing index is pending receipt of the full design set. The preliminary scope is defined by the following representative sheets:
+table-row,row,Sheet # | Title
+table-row,row,G-001 | General Notes & Specs
+table-row,row,S-100 | Foundation & Anchor Plan
+table-row,row,S-201 | 2nd Floor Framing Plan
+table-row,row,S-202 | 3rd Floor Framing Plan
+table-row,row,S-203 | Roof Framing Plan
+table-row,row,S-301 | Building Elevations
+table-row,row,S-501 | Connection Details
+table-row,row,A-101 | Architectural Lobby Plan
+table-row,row,A-501 | Architectural Lobby Detail
+p,p,"#### Piece-Marking Scheme A standard alpha-numeric scheme will be implemented: B (Beams), C (Columns), G (Girders), BR (Braces), P (Plates), L (Angles), XG (Stair Stringers). AESS members will receive a distinct prefix (AC)."
+p,p,"#### Anchor Schedule Anchor bolts are unusually long, requiring strict embedment and location tolerance control. Coordination with the concrete contractor is critical. A dedicated anchor bolt setting plan is required."
+table-row,row,Col Mark | Base Plate Size | Anchor Bolt Spec. | Projection | Grout | Qty | Sheet Ref.
+table-row,row,"C1 | PL 2"" x 2'-4"" x 2'-4"" | (8) 1-1/2"" Ø F1554 Gr. 55, L=5'-6"", H.D. Galv. | 6"" | 2"" | 12 | S-100"
+table-row,row,"C2 | PL 1-3/4"" x 1'-10"" x 1'-10"" | (4) 1-1/4"" Ø F1554 Gr. 55, L=4'-0"", H.D. Galv. | 5"" | 1.5"" | 16 | S-100"
+table-row,row,"AC1 | PL 2-1/4"" x 2'-0"" x 2'-0"" (AESS) | (4) 1-1/2"" Ø F1554 Gr. 55, L=5'-6"", H.D. Galv. | 6"" | 2"" | 4 | S-100"
+p,p,#### Connection Inventory Connections are a mix of standard shear connections and more complex moment and bracing connections. Connection design will be delegated to the fabricator's engineer.
+table-row,row,Conn. Type | Member Attachment | Fasteners / Welds | Location | Sheet Ref.
+table-row,row,"Simple Shear | W-beam to W-girder/col | 3/4"" Ø A325-N bolts in single plate shear tabs (typ.) | All floors | S-501, Dtl 1"
+table-row,row,"Moment End-Plate | W-girder to W-column | 1"" Ø A490-N bolts (TC), CJP groove weld flange-to-plate | Gridlines B & C | S-501, Dtl 2"
+table-row,row,"Concentric Brace Gusset | HSS brace to W-col/bm | 7/8"" Ø A325-N bolts, 5/16"" fillet welds (shop) | Gridlines 1 & 5 | S-501, Dtl 3"
+table-row,row,"Column Splice | W-column to W-column | 1"" Ø A325-N bolts (bearing), partial joint penetration | Above 2nd floor | S-501, Dtl 4"
+table-row,row,"AESS Column Base (Exposed) | HSS column to base PL | Hidden welds, ground smooth per AESS Cat 2 requirements | Lobby at Grid A/2 | A-501"
+p,p,#### Detailing Assumptions 1.  3D model will be produced using Tekla Structures 2024. 2.  All connection calculations and details will be prepared by our licensed engineer and submitted for EOR review and approval. 3.  Erection drawings will include a detailed anchor bolt setting plan and column erection sequence. 4.  RFI response turnaround is assumed to be 48 hours. Submittal review is assumed to be 10 business days.
+p,p,#### Estimated Detailing Man-Hours
+li,li,"Total Tonnage: 220 tons Productivity Rate: 18 man-hours/ton (reflects complexity of moment/brace connections) Total Estimated Hours: 220 tons * 18 mh/ton = 3,960 man-hours"
+h3,h3,C. ENGINEERING LAYER
+p,p,#### Structural System Summary
+li,li,"Vertical (Gravity) System: Composite metal deck and concrete slab supported by W-shape beams and girders, transferring load to W-shape columns. Lateral Force Resisting System (LFRS): North-South: Ordinary Moment Frames (OMF) at grids B & C. East-West: Ordinary Concentric Braced Frames (OCBF) with HSS braces at grids 1 & 5. Seismic Design Category (SDC): Based on the Denver, CO location and ASCE 7-22, the project is SDC B."
+p,p,"#### Load Path Gravity loads transfer from the slab to beams, to girders, to columns, and into the foundations. Lateral loads are transferred through the slab diaphragms to the OMFs and OCBFs, which then transfer shear and overturning forces to the foundation system via the anchor bolts."
+p,p,"#### Critical Connection List & Governing Clauses 1.  Moment End-Plate Connections (OMF): Design must comply with AISC 360-22 Chapter J for moment connections and AISC 341-22 for OMF provisions. Pre-qualification per AISC 358-22 is required. The end-plate thickness and CJP weld quality are paramount. 2.  Brace-to-Gusset Connections (OCBF): Design must accommodate ductility requirements per AISC 341-22 §F1. The gusset plate must be designed to accommodate inelastic deformation, and welds must develop the required strength of the brace. Uniform Force Method per AISC 360-22 §J1.7 is the required design basis. 3.  Column Base Plates: Base plates for moment frame columns must be designed for full plastic moment capacity of the column. The 5'-6"" anchor bolts require careful analysis of embedment, concrete breakout, and stiffness under load, per ACI 318-19 Chapter 17."
+p,p,#### Items Requiring EOR Stamp
+li,li,"All connection calculations (shear, moment, brace). Anchor bolt extension calculations, if required due to embedment issues. Any proposed substitution for specified materials. Remedial details for any site non-conformance."
+h3,h3,D. FABRICATION LAYER
+p,p,"#### Shop-Load Man-Hour Estimate The AESS columns require a significant labor premium for grinding, handling, and quality control."
+li,li,"Standard Structural Steel: 200 tons @ 22 mh/ton = 4,400 mh AESS Category 2 Steel: 20 tons @ 32 mh/ton = 640 mh Total Estimated Hours: 5,040 man-hours"
+p,p,"#### Shop Sequence & Flow 1.  Release 1 (Anchors): Fabricate and deliver all anchor bolts and templates immediately upon drawing approval to avoid impacting the concrete schedule. 2.  Release 2 (Columns & Braces): Prioritize columns (both standard and AESS) and braced frame members. AESS columns require a separate, controlled workflow to prevent surface damage and ensure specified finish. 3.  Release 3 (Main Framing): Fabricate girders and beams by floor level, starting with Level 2. 4.  Release 4 (Stairs & Misc.): Fabricate stairs and miscellaneous metals."
+p,p,#### NC Readiness The project has high NC readiness. The majority of members are standard W-shapes and HSS. Automated cutting (saw/plasma) and drilling lines will be utilized for over 90% of the main members. CJP groove welds on moment connections will be performed by certified welders using semi-automated processes where possible.
+p,p,#### Coating System
+li,li,"Standard Steel: SSPC-SP 6 Commercial Blast Cleaning, followed by one shop coat of universal alkyd primer, 3.0 mils DFT. AESS Cat 2 Columns: SSPC-SP 6, followed by one shop coat of zinc-rich epoxy primer, 3.0 mils DFT, compatible with the architectural finish paint system. Galvanizing: All anchor bolts, nuts, and washers to be Hot-Dip Galvanized per ASTM A153."
+p,p,#### Lifting & Delivery Plan
+li,li,"Material will be delivered in 20-22 truckloads. Maximum member length is assumed to be 55 ft. AESS columns must be individually wrapped in protective blankets and shipped on dedicated dunnage to prevent any scratches or surface damage during transit. Delivery sequence will be coordinated with the erection plan: anchors first, then columns by tier, then framing by floor."
+h3,h3,E. COMMERCIAL LAYER
+p,p,#### Tonnage Breakdown (Estimate)
+li,li,W-Shapes (A992): 175 tons HSS (A500 Gr. C): 25 tons Plate & Angle (A572-50/A36): 20 tons Total: 220 tons
+p,p,#### Direct-Cost Build-Up (2026 Market Rates)
+table-row,row,Category | Rate Basis | Calculation | Cost
+table-row,row,"**Raw Material** | Blended Rate | 220 tons @ $1,550/ton | $341,000"
+table-row,row,"**Detailing & Engineering** | Per ton | 220 tons @ $1,150/ton | $253,000"
+table-row,row,"**Shop Fabrication Labor** | Blended hourly rate | 5,040 mh @ $105/hr | $529,200"
+table-row,row,"**Coatings** | Per sqft | ~70,000 sqft @ $0.90/sqft | $63,000"
+table-row,row,"**Consumables & QA/QC** | % of Fab Labor | 15% of $529,200 | $79,380"
+table-row,row,"**Delivery to Site** | Per truckload | 22 loads @ $1,800/load | $39,600"
+table-row,row,"**Erection (incl. Crane)** | Per ton | 220 tons @ $1,200/ton | $264,000"
+table-row,row,"**Subtotal (Direct Cost)** |  |  | **$1,569,180**"
+table-row,row,"**Contingency & Margin** | 15% | 15% of Subtotal | $235,377"
+table-row,row,"**Total Turnkey Price** |  |  | **$1,804,557**"
+table-row,row,"**Cost per Ton** |  | $1,804,557 / 220 tons | **$8,102/ton**"
+p,p,"Note: The calculated rate of $8,102/ton exceeds the typical $6,500/ton ceiling. This is driven by the AESS premium, complex moment/brace connections, and the extraordinary anchor bolt requirements which add significant risk and coordination costs not captured in standard rates."
+p,p,"#### Hidden-Cost Exposure 1.  AESS Rework: Rejection of AESS finish by the architect on-site can lead to costly field repairs or member replacement. Budget a minimum of 40 man-hours for field touch-ups. 2.  Anchor Bolt Misalignment: A single misplaced anchor bolt can cause hours of crane and crew standby time, costing $4,000-$6,000 per incident. The 5'-6"" length exacerbates this risk. 3.  Weld Inspection Failures: NDT (UT/MT) on moment connection CJP welds can reveal defects, requiring expensive gouging and re-welding in the shop or field."
+p,p,#### Recommended Bid Range
+li,li,"Aggressive Bid (Assumes no rework): $1,750,000 ($7,955/ton) Target Bid (As calculated): $1,805,000 ($8,204/ton) Conservative Bid (Includes risk contingency): $1,895,000 ($8,613/ton)"
+h3,h3,F. SCHEDULE LAYER
+p,p,#### Key Milestones (22-Week Duration)
+li,li,"Weeks 1-4: Detailing, RFI Resolution, Connection Engineering Weeks 5-6: Submittal Review & Approval Weeks 3-7: Raw Material Procurement (overlap) Weeks 7-15: Shop Fabrication (8 weeks) Weeks 15-16: Material Staging & Delivery Start Weeks 16-22: Site Erection (6 weeks)"
+p,p,#### Critical Path The critical path runs directly through Anchor Bolt Drawing Approval -> Anchor Bolt Fabrication -> Anchor Bolt Delivery. Any delay here will postpone the concrete pour and the entire steel erection schedule. The second critical path is the approval and fabrication of the moment frame members.
+p,p,#### Assumptions
+li,li,RFI Cycle: 48-hour response time from the design team. Submittal Cycle: 10-business-day review period for drawings and calculations. Site Access: Unimpeded site access for delivery trucks and a 120-ton crane.
+h3,h3,G. RISK REGISTER
+table-row,row,Risk ID | Description | Probability (1-5) | Impact (1-5) | Mitigation Strategy
+table-row,row,R-01 | **AESS Finish Rejection** | 4 | 4 | Pre-fabrication meeting with Architect to sign off on a physical mock-up sample. Implement stringent QC program.
+table-row,row,"R-02 | **Anchor Bolt Misalignment** | 3 | 5 | Issue a dedicated, fully-dimensioned anchor bolt setting plan. Use robust, steel survey-set templates. Pre-pour survey."
+table-row,row,R-03 | **Moment Weld Failure (NDT)** | 2 | 4 | Use pre-qualified WPS. Assign only top-certified welders. Increase in-process visual inspection frequency.
+table-row,row,R-04 | **HSS Material Lead Time** | 3 | 3 | Confirm availability and reserve material with supplier immediately upon contract award.
+table-row,row,R-05 | **Design Ambiguity in RFIs** | 4 | 2 | Maintain a formal RFI log with clear deadlines. Escalate unanswered critical RFIs to project management.
+table-row,row,R-06 | **Late Design Changes** | 3 | 4 | Enforce a clear change order process with documented cost and schedule impacts for every change.
+table-row,row,"R-07 | **Site Access / Crane Pad Issues** | 2 | 5 | Pre-erection site walk with GC and Erector to verify access routes, laydown areas, and crane pad suitability."
+table-row,row,R-08 | **Coatings Incompatibility** | 2 | 3 | Obtain written confirmation from paint manufacturer that shop primer is compatible with specified finish coats.
+table-row,row,R-09 | **Skilled Labor Shortage (Welders)** | 3 | 3 | Secure commitments from key personnel early. Cross-train staff where possible.
+table-row,row,"R-10 | **Material Price Volatility** | 3 | 3 | Lock in material pricing with suppliers upon contract award. Qualify bids for a limited time (e.g., 30 days)."
+h3,h3,H. RFI REGISTER
+table-row,row,RFI # | Subject | Sheet Ref. | Priority | Blocking?
+table-row,row,RFI-01 | AESS Cat 2 Finish Requirements | A-501 | High | Y
+table-row,row,RFI-02 | Specify exact paint product for SSPC system | G-001 | Medium | N
+table-row,row,RFI-03 | Confirmation of required anchor bolt templates | S-100 | High | Y
+table-row,row,"RFI-04 | Missing ""Hold"" dimensions for column lines on plans | S-201 | High | Y"
+table-row,row,RFI-05 | Required sequence of erection | G-001 | Medium | N
+table-row,row,RFI-06 | Camber requirements for beams > 30 ft. | G-001 | Medium | N
+table-row,row,RFI-07 | Shear stud layout and quantities | S-201 | High | Y
+table-row,row,RFI-08 | Verify slab thickness and concrete strength (f'c) | G-001 | High | Y
+h3,h3,I. NEXT-14-DAY ACTION LIST
+p,p,#### Project Manager 1.  Schedule and lead an internal project kick-off meeting with all department leads. 2.  Formally issue all RFIs (RFI-01 through RFI-08) to the design team and log them. 3.  Draft and send the pre-fabrication AESS mock-up meeting request to the Architect and GC. 4.  Establish the master project schedule and submittal register.
+p,p,"#### Detailer 1.  Set up the Tekla model with correct grid lines and levels based on architectural backgrounds. 2.  Model all main member columns and grid lines, flagging any discrepancies found. 3.  Begin detailing anchor bolt assemblies and templates for priority release. 4.  Develop a list of any further RFIs discovered during initial model setup."
+p,p,"#### Engineer 1.  Begin preliminary design calculations for the critical moment and braced frame connections. 2.  Review ACI 318-19 Chapter 17 relative to the 5'-6"" anchor bolts to identify any potential design issues. 3.  Prepare calculation package shell for submittal."
+p,p,#### Fabricator (Shop Manager) 1.  Contact steel suppliers to get firm quotes and lead times on A992 W-shapes and A500 Grade C HSS sections. 2.  Review AESS Cat 2 requirements (AISC 303-22 §10.2) with the lead welder and QC manager. Plan the separate workflow for AC1 columns. 3.  Verify welder certifications for AWS D1.1 CJP groove welds are current.
+p,p,"#### Estimator 1.  Review this audit and finalize the bid proposal, ensuring all qualifications and clarifications are included (especially regarding AESS criteria and anchor bolt tolerances). 2.  Prepare a schedule of values based on the commercial breakdown. 3.  Archive all takeoff and pricing data for use by the project management team upon award."

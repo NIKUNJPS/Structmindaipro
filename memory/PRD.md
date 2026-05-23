@@ -27,14 +27,15 @@ Detailer · Engineer · Fabricator · Estimator · Project Manager · Modular ·
 1. `niks.shah236@gmail.com` / `Nikunj@1405`
 2. `lalit@4xstruct.com` / `Lalit@4xstruct`
 
-## Implemented (2026-04-24, v2)
+## Implemented (2026-04-24, v3)
 
-### Backend (11 modules, 55+ endpoints)
+### Backend (12 modules, 55+ endpoints)
 - `config.py` · env-driven settings
 - `db.py` · Motor client + index ensurer
 - `security.py` · bcrypt + JWT HS256 + OTP hash/generate + role guards
 - `email_service.py` · SMTP + dev-console fallback, branded HTML templates (no Gemini mention)
-- `ai_modes.py` · **all 25 AI modes** with group/role/pro/time + roles array
+- `ai_modes.py` · **all 25 AI modes** with group/role/pro/time + roles array + DRAWING_PROTOCOL preamble
+- `role_prompts.py` · **NEW (v3) — 7 role-specific lenses** (detailer/engineer/fabricator/estimator/pm/modular/admin) for every mode + AUTHORITY_PREFACE + 2026 US/India market rate anchors
 - `gemini_service.py` · STRUCTMIND CORE fallback chain with engine_label() rebranding (PRO/FAST)
 - `demo_prompts.py` · representative demo scope per mode for Role Guide demos
 - `export_service.py` · Word / PDF / Excel / CSV / Markdown generation
@@ -43,26 +44,19 @@ Detailer · Engineer · Fabricator · Estimator · Project Manager · Modular ·
   - auth · signup · verify-otp · login · forgot-password · verify-reset-otp · reset-password · change-password (with OTP) · refresh · resend-otp · me · update-me · logout
   - projects · list · create · get · update · archive · add team member
   - files · upload (500MB) · meta · download · delete · list (SHA-256 hashed)
-  - analyses · list modes (incl. demo_prompt + roles) · create · **/demo** (NEW — admin bypasses lock) · list · get · status · rerun · export download · delete
+  - **analyses** · list modes (incl. demo_prompt + roles) · create (ROLE-AWARE prompt composition) · /demo (admin bypasses lock) · list · get · status · rerun · export download · delete
   - rfis · CRUD + status transitions
   - platform · notifications · usage · dashboard stats · blockchain verify · admin users/analytics/audit-log · outputs
 
-### Frontend (15 pages)
-- Global: Sora + IBM Plex + JetBrains Mono, brand tokens, hover-lift utility, page-load transitions
-- AuthContext + ProtectedRoute + AdminRoute
-- AppShell: 260px navy sidebar (with Role Guide entry) + top bar (search · bell · user menu)
-- Pages:
-  - Public: Landing (11 sections), Login (60/40 split), Signup, VerifyOtp, ForgotPassword (3-step)
-  - App: Dashboard (Demo Console callout + stat cards w/ framer-motion stagger + 30d chart + donut), Projects, ProjectDetail, AnalyzeWizard (25-mode grouped selector), AnalysisReport (accordion + 5 exports + BlockchainBadge), RfiKanban (drag-drop), Outputs (5-format downloads), RiskDashboard, **RoleGuide (NEW — demo console for all 25 modes per role, admin bypass, Preview modal, one-click demo)**, SettingsProfile, SettingsSecurity
-  - Admin: Users (role/tier dropdowns), AuditLog
+### Frontend (15 pages — unchanged from v2)
 
-### v2 delta
-- Added 2nd super admin (lalit@4xstruct.com)
-- Switched heading font: Barlow Condensed → Sora (more professional SaaS)
-- Heavy framer-motion animations (staggered stat-card reveals, AnimatePresence on role tabs, hover lift on cards, modal spring-in)
-- Rebranded all AI engine surfaces: model_used now shows "STRUCTMIND CORE · PRO / FAST", email footer "STRUCTMIND CORE engine", landing tagline "4X Neural Core Engine"
-- NEW /roles Role Guide page + /api/analyses/demo endpoint → one-click demo every mode
-- Demo prompt library (25 representative scopes) auto-fills when user skips the optional instructions box
+### v3 delta (this iteration)
+- **Role-specific prompts** — every mode composes a different system prompt per role (detailer / engineer / fabricator / estimator / pm / modular / admin). Verified: admin Master Intake = 17,608 chars (9 sections, all layers); detailer Master Intake = 12,179 chars (11 detailing-only sections); outputs are distinct.
+- **2026 market rate anchors** — ESTIMATION_PRO and MTO now anchor every dollar figure to USD 1,200-1,700/ton mill / USD 4,500-6,500/ton turnkey bands. Verified estimator output sits inside band ($1,582/ton mill steel).
+- **Authoritative tone enforced** — DRAWING_PROTOCOL and AUTHORITY_PREFACE forbid the words "confidence", "approximately", "I think", "NOT PROVIDED", "I cannot", "perhaps", "I don't". Verified clean across all role outputs.
+- **Drawing analysis protocol** — every prompt now opens with strict "Read every page... Cite sheet for every claim... No paraphrasing" instructions to maximize accuracy on uploaded drawings.
+- **Admin = comprehensive merged view** — combines detailing + engineering + fabrication + commercial + schedule + risk + RFI + 14-day actions layers per mode.
+
 
 ## Testing
 - iteration_1.json: 23/23 backend + all frontend passed

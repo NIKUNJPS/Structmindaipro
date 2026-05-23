@@ -10,13 +10,14 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
 
-from ai_modes import MODES, list_modes_for_role, mode_label
+from ai_modes import MODES, DRAWING_PROTOCOL, list_modes_for_role, mode_label
 from config import settings
 from db import get_db
 from demo_prompts import get_demo_prompt
 from export_service import EXPORT_DIR, generate_all_exports
 from gemini_service import run_analysis
 from models import AnalysisCreate
+from role_prompts import get_role_lens
 from security import get_current_user, sha256_hex
 
 logger = logging.getLogger(__name__)
@@ -74,9 +75,20 @@ async def _run_analysis_task(analysis_id: str):
                 "No LLM key configured. Set GEMINI_API_KEY or EMERGENT_LLM_KEY in /app/backend/.env"
             )
         text_prompt = analysis.get("input_text") or get_demo_prompt(analysis["mode"])
+        # Compose role-aware system prompt: protocol + base mode prompt + role-specific lens
+        requester = await db.users.find_one(
+            {"id": analysis["requested_by"]}, {"_id": 0, "role": 1}
+        )
+        requester_role = (requester or {}).get("role", "detailer")
+        role_lens = get_role_lens(requester_role, analysis["mode"])
+        composed_system_prompt = (
+            f"{DRAWING_PROTOCOL.strip()}\n\n"
+            f"## MODE: {mode['label']}\n{mode['prompt']}\n\n"
+            f"## ROLE LENS — {requester_role.upper()}\n{role_lens}"
+        )
         output, model_used = await run_analysis(
             session_id=analysis_id,
-            system_prompt=mode["prompt"],
+            system_prompt=composed_system_prompt,
             user_text=text_prompt,
             file_paths=file_pairs,
         )
