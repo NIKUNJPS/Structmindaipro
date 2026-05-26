@@ -4,13 +4,12 @@ import { motion } from "framer-motion";
 import {
     ArrowRight,
     Boxes,
+    Calculator,
     CircleDot,
     FolderKanban,
     MessageSquareQuote,
-    Play,
     Sparkles,
     TrendingUp,
-    UserCog,
 } from "lucide-react";
 import {
     Area,
@@ -25,14 +24,8 @@ import {
 } from "recharts";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { roleLabel } from "@/components/brand/RolePillSelector";
 import { Skeleton } from "@/components/ui/skeleton";
-
-const TIER_LABELS = {
-    free: "FREE",
-    starter: "STARTER",
-    pro: "PRO",
-    enterprise: "ENTERPRISE",
-};
 
 const COLORS = ["#f5a800", "#0d2240", "#1a3a5c", "#ffd166", "#6b8299", "#16a34a", "#ef4444"];
 
@@ -95,6 +88,12 @@ export default function Dashboard() {
         })();
     }, []);
 
+    const usageLabel = usage
+        ? usage.analyses_limit === -1
+            ? `${usage.analyses_used} analyses (unlimited)`
+            : `${usage.analyses_used} / ${usage.analyses_limit} analyses used`
+        : "—";
+
     return (
         <div className="min-h-full bg-background">
             <div className="border-b border-ink-line bg-white px-10 py-10">
@@ -107,24 +106,16 @@ export default function Dashboard() {
                         <div className="mt-3 flex items-center gap-3 font-mono text-xs uppercase tracking-wider text-ink-muted">
                             <span className="inline-flex items-center gap-1.5">
                                 <CircleDot size={10} className="text-gold" />
-                                Role · {user?.role}
+                                Role · {roleLabel(user?.role)}
                             </span>
                             <span>·</span>
-                            <span>Tier · {TIER_LABELS[user?.subscription_tier] || "FREE"}</span>
-                            <span>·</span>
-                            <span>
-                                {usage?.analyses_used || 0} / {usage?.analyses_limit || 0} analyses used
-                            </span>
+                            <span>{usageLabel}</span>
                         </div>
                     </div>
                     <div className="flex gap-3">
-                        <Link to="/projects/new" className="btn-ghost-navy">
-                            <FolderKanban size={14} />
-                            New Project
-                        </Link>
-                        <Link to="/roles" className="btn-ghost-navy" data-testid="dashboard-role-guide">
-                            <UserCog size={14} />
-                            Role Guide
+                        <Link to="/estimate" className="btn-ghost-navy" data-testid="dashboard-estimate">
+                            <Calculator size={14} />
+                            Estimation
                         </Link>
                         <Link to="/analyze" className="btn-gold" data-testid="dashboard-quick-analyze">
                             <Sparkles size={14} />
@@ -137,44 +128,6 @@ export default function Dashboard() {
 
             {/* CONTENT */}
             <div className="container-steel py-10">
-                {/* ROLE GUIDE CALLOUT */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, delay: 0.3 }}
-                    className="mb-8 overflow-hidden border border-navy bg-navy text-white"
-                >
-                    <div className="relative p-6 md:p-8">
-                        <div className="absolute inset-0 tech-grid opacity-30" />
-                        <div className="relative flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
-                            <div className="flex items-start gap-4">
-                                <div className="flex h-12 w-12 items-center justify-center border border-gold/50 bg-gold/10">
-                                    <Play size={18} className="text-gold" fill="currentColor" />
-                                </div>
-                                <div>
-                                    <div className="text-overline">Demo console</div>
-                                    <div className="mt-1 font-heading text-2xl font-bold leading-tight text-white md:text-3xl">
-                                        Flex all 25 AI modes — zero drawings required.
-                                    </div>
-                                    <p className="mt-2 max-w-xl text-sm text-white/70">
-                                        Pick a role, hit <span className="text-gold">Demo</span>,
-                                        watch STRUCTMIND CORE spin up a full, role-specific report
-                                        with every export format.
-                                    </p>
-                                </div>
-                            </div>
-                            <Link
-                                to="/roles"
-                                data-testid="dashboard-open-role-guide"
-                                className="btn-gold flex-shrink-0"
-                            >
-                                Open Role Guide
-                                <ArrowRight size={14} />
-                            </Link>
-                        </div>
-                    </div>
-                </motion.div>
-
                 {/* STATS */}
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
                     {loading
@@ -272,7 +225,7 @@ export default function Dashboard() {
                     <div className="card-steel p-6 md:col-span-2">
                         <div className="text-overline">Mode usage</div>
                         <div className="mt-1 font-heading text-2xl font-bold uppercase tracking-tight text-navy">
-                            Top 7 modes
+                            Top modes
                         </div>
                         <div className="mt-4 h-64">
                             {data?.mode_usage?.length ? (
@@ -420,4 +373,3 @@ function StatusPill({ status }) {
         </span>
     );
 }
-

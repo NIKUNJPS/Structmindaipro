@@ -28,7 +28,7 @@ export function ProtectedRoute({ children }) {
 export function AdminRoute({ children }) {
     const { user, loading } = useAuth();
     if (loading) return null;
-    if (!user || user.role !== "admin") {
+    if (!user || user.role !== "super_admin") {
         return <Navigate to="/dashboard" replace />;
     }
     return children;

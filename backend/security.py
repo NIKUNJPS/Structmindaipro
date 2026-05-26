@@ -86,6 +86,21 @@ def create_reset_token(user_id: str, purpose: str) -> str:
     )
 
 
+def create_impersonation_token(target_user_id: str, target_role: str, admin_id: str) -> str:
+    """Short-lived read-only JWT for super_admin impersonation. 15 min expiry."""
+    return _encode(
+        {
+            "sub": target_user_id,
+            "role": target_role,
+            "type": "access",
+            "impersonated_by": admin_id,
+            "read_only": True,
+            "jti": secrets.token_urlsafe(12),
+        },
+        timedelta(minutes=15),
+    )
+
+
 def decode_token(token: str) -> dict:
     try:
         return jwt.decode(
@@ -124,6 +139,9 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="User not found")
     if not user.get("is_active", True):
         raise HTTPException(status_code=403, detail="Account disabled")
+    # Surface impersonation metadata for downstream guards/audit
+    user["_impersonated_by"] = payload.get("impersonated_by")
+    user["_read_only"] = bool(payload.get("read_only"))
     request.state.user = user
     return user
 
@@ -137,7 +155,24 @@ def require_roles(*roles: str):
     return _dep
 
 
+async def get_super_admin(user=Depends(get_current_user)):
+    if user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Super admin access required")
+    if user.get("_read_only"):
+        # Block writes for impersonation sessions — applies at the endpoint level
+        # when this dep is wired to a mutating route. GET routes use get_current_user.
+        raise HTTPException(status_code=403, detail="Impersonation session — read only.")
+    return user
+
+
+def block_write_if_readonly(user: dict) -> None:
+    """Raise 403 if the current session is a read-only impersonation token."""
+    if user.get("_read_only"):
+        raise HTTPException(status_code=403, detail="Impersonation session — read only.")
+
+
 async def get_current_admin(user=Depends(get_current_user)):
-    if user.get("role") != "admin":
+    """Backwards-compat alias used by older routes."""
+    if user.get("role") != "super_admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return user

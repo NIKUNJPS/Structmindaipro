@@ -1,4 +1,8 @@
-"""Notifications + usage + dashboard + admin + blockchain verify endpoints."""
+"""Notifications + usage + dashboard + blockchain verify endpoints.
+
+NOTE: Admin endpoints have moved to /app/backend/routes/admin.py. This file now
+only handles per-user platform utilities.
+"""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -6,7 +10,8 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
 from db import get_db
-from security import get_current_admin, get_current_user, sha256_hex
+from middleware.permission_guard import load_permissions
+from security import get_current_user
 
 router = APIRouter(tags=["platform"])
 
@@ -42,15 +47,17 @@ async def mark_all_read(user=Depends(get_current_user)):
 
 # -------- USAGE --------
 @router.get("/api/usage/me")
-async def usage_me(user=Depends(get_current_user)):
+async def usage_me(user=Depends(get_current_user), perms: dict = Depends(load_permissions)):
     db = get_db()
     full = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    ym = datetime.now(timezone.utc).strftime("%Y-%m")
+    usage_doc = await db.usage_records.find_one({"userId": user["id"], "yearMonth": ym}) or {}
     return {
-        "analyses_used": full.get("usage_this_month", {}).get("analyses", 0),
-        "analyses_limit": full.get("limits", {}).get("analyses_per_month", 5),
-        "files_processed": full.get("usage_this_month", {}).get("files_processed", 0),
-        "total_file_size_mb": full.get("usage_this_month", {}).get("total_file_size_mb", 0),
-        "subscription_tier": full.get("subscription_tier", "free"),
+        "analyses_used":  usage_doc.get("analysesCount", 0),
+        "analyses_limit": perms.get("analysesPerMonth", 10),
+        "files_processed":    (full or {}).get("usage_this_month", {}).get("files_processed", 0),
+        "total_file_size_mb": (full or {}).get("usage_this_month", {}).get("total_file_size_mb", 0),
+        "subscription_tier":  (full or {}).get("subscription_tier", "free"),
         "period_start": datetime.now(timezone.utc).replace(day=1).isoformat(),
         "period_end": (datetime.now(timezone.utc).replace(day=1) + timedelta(days=32)).replace(day=1).isoformat(),
     }
@@ -60,16 +67,16 @@ async def usage_me(user=Depends(get_current_user)):
 @router.get("/api/dashboard/stats")
 async def dashboard_stats(user=Depends(get_current_user)):
     db = get_db()
-    scope = {"owner_id": user["id"]} if user["role"] != "admin" else {}
-    req_scope = {"requested_by": user["id"]} if user["role"] != "admin" else {}
+    scope = {"owner_id": user["id"]} if user["role"] != "super_admin" else {}
+    req_scope = {"requested_by": user["id"]} if user["role"] != "super_admin" else {}
 
     total_projects = await db.projects.count_documents({**scope, "status": {"$ne": "archived"}})
     active_analyses = await db.analyses.count_documents({**req_scope, "status": {"$in": ["queued", "processing"]}})
     open_rfis = await db.rfis.count_documents(
-        {**({"created_by": user["id"]} if user["role"] != "admin" else {}), "status": {"$in": ["draft", "sent"]}}
+        {**({"created_by": user["id"]} if user["role"] != "super_admin" else {}), "status": {"$in": ["draft", "sent"]}}
     )
     files_processed = await db.files.count_documents(
-        {**({"uploaded_by": user["id"]} if user["role"] != "admin" else {})}
+        {**({"uploaded_by": user["id"]} if user["role"] != "super_admin" else {})}
     )
 
     # 30-day activity
@@ -96,7 +103,8 @@ async def dashboard_stats(user=Depends(get_current_user)):
     # Recent analyses
     recent = await db.analyses.find(
         req_scope,
-        {"_id": 0, "id": 1, "mode": 1, "mode_label": 1, "status": 1, "created_at": 1, "issues_found": 1, "project_id": 1, "quality_score": 1},
+        {"_id": 0, "id": 1, "mode": 1, "mode_label": 1, "status": 1, "created_at": 1,
+         "issues_found": 1, "project_id": 1, "quality_score": 1},
     ).sort("created_at", -1).to_list(8)
 
     return {
@@ -115,7 +123,6 @@ async def dashboard_stats(user=Depends(get_current_user)):
 # -------- BLOCKCHAIN VERIFY (SHA-256 MVP) --------
 @router.post("/api/blockchain/verify")
 async def verify_hash(payload: dict):
-    """Verify a SHA-256 hash against stored records (analyses, files)."""
     db = get_db()
     h = (payload.get("hash") or "").lower().strip()
     if not h:
@@ -137,89 +144,20 @@ async def verify_hash(payload: dict):
     }
 
 
-# -------- ADMIN --------
-@router.get("/api/admin/users")
-async def admin_users(user=Depends(get_current_admin)):
-    db = get_db()
-    items = await db.users.find(
-        {}, {"_id": 0, "password_hash": 0, "otp_hash": 0, "otp_expiry": 0, "otp_purpose": 0}
-    ).sort("created_at", -1).to_list(500)
-    return {"items": items, "total": len(items)}
-
-
-@router.put("/api/admin/users/{uid}")
-async def admin_update_user(uid: str, payload: dict, user=Depends(get_current_admin)):
-    db = get_db()
-    allowed = {"role", "is_active", "subscription_tier", "is_verified"}
-    updates = {k: v for k, v in payload.items() if k in allowed and v is not None}
-    if updates:
-        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-        await db.users.update_one({"id": uid}, {"$set": updates})
-    fresh = await db.users.find_one(
-        {"id": uid}, {"_id": 0, "password_hash": 0, "otp_hash": 0}
-    )
-    return fresh
-
-
-@router.delete("/api/admin/users/{uid}")
-async def admin_disable_user(uid: str, user=Depends(get_current_admin)):
-    db = get_db()
-    await db.users.update_one({"id": uid}, {"$set": {"is_active": False}})
-    return {"message": "User disabled"}
-
-
-@router.get("/api/admin/analytics")
-async def admin_analytics(user=Depends(get_current_admin)):
-    db = get_db()
-    total_users = await db.users.count_documents({})
-    active_users = await db.users.count_documents({"is_active": True})
-    total_projects = await db.projects.count_documents({})
-    total_analyses = await db.analyses.count_documents({})
-    complete = await db.analyses.count_documents({"status": "complete"})
-    failed = await db.analyses.count_documents({"status": "failed"})
-    total_files = await db.files.count_documents({})
-    total_rfis = await db.rfis.count_documents({})
-
-    by_role_pipeline = [{"$group": {"_id": "$role", "c": {"$sum": 1}}}]
-    by_role = []
-    async for d in db.users.aggregate(by_role_pipeline):
-        by_role.append({"role": d["_id"], "count": d["c"]})
-
-    return {
-        "total_users": total_users,
-        "active_users": active_users,
-        "total_projects": total_projects,
-        "total_analyses": total_analyses,
-        "complete_analyses": complete,
-        "failed_analyses": failed,
-        "total_files": total_files,
-        "total_rfis": total_rfis,
-        "users_by_role": by_role,
-    }
-
-
-@router.get("/api/admin/audit-log")
-async def admin_audit_log(limit: int = 100, user=Depends(get_current_admin)):
-    db = get_db()
-    items = await db.audit_log.find({}, {"_id": 0}).sort("timestamp", -1).to_list(limit)
-    return {"items": items, "total": len(items)}
-
-
-# -------- OUTPUTS (list all generated exports for user) --------
+# -------- OUTPUTS --------
 @router.get("/api/outputs")
 async def list_outputs(user=Depends(get_current_user)):
     db = get_db()
     q = {"status": "complete"}
-    if user["role"] != "admin":
+    if user["role"] != "super_admin":
         q["requested_by"] = user["id"]
     items = await db.analyses.find(
         q,
         {"_id": 0, "id": 1, "mode": 1, "mode_label": 1, "project_id": 1, "exports": 1,
          "blockchain_hash": 1, "completed_at": 1, "issues_found": 1, "quality_score": 1, "model_used": 1},
     ).sort("completed_at", -1).to_list(200)
-    # attach project names
     pids = list({i["project_id"] for i in items if i.get("project_id")})
-    projs = {}
+    projs: dict[str, str] = {}
     if pids:
         async for p in db.projects.find({"id": {"$in": pids}}, {"_id": 0, "id": 1, "name": 1}):
             projs[p["id"]] = p["name"]

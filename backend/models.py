@@ -16,9 +16,8 @@ def new_id() -> str:
     return str(uuid.uuid4())
 
 
-Role = Literal[
-    "detailer", "engineer", "fabricator", "estimator", "pm", "modular", "admin"
-]
+# 3-role architecture. `super_admin` controls everything via feature_permissions.
+Role = Literal["super_admin", "detailer", "fabricator"]
 SubscriptionTier = Literal["free", "starter", "pro", "enterprise"]
 
 
@@ -29,7 +28,8 @@ class SignupRequest(BaseModel):
     first_name: str = Field(min_length=1, max_length=64)
     last_name: str = Field(min_length=1, max_length=64)
     company: str = Field(default="", max_length=128)
-    role: Role
+    # Self-signup is restricted to detailer or fabricator. Super admins are seeded only.
+    role: Literal["detailer", "fabricator"]
     country: str = Field(default="", max_length=64)
 
 
@@ -88,6 +88,7 @@ class UserPublic(BaseModel):
     is_verified: bool = False
     is_active: bool = True
     subscription_tier: SubscriptionTier = "free"
+    created_by: Optional[str] = None
     usage_this_month: dict = Field(default_factory=dict)
     limits: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=now_utc)
@@ -257,10 +258,53 @@ class UsageOut(BaseModel):
 
 
 # ---------- ADMIN ----------
+class AdminUserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    first_name: str = Field(min_length=1, max_length=64)
+    last_name: str = Field(min_length=1, max_length=64)
+    company: str = Field(default="", max_length=128)
+    country: str = Field(default="", max_length=64)
+    role: Literal["detailer", "fabricator"]
+
+
 class AdminUserUpdate(BaseModel):
     role: Optional[Role] = None
     is_active: Optional[bool] = None
+    is_verified: Optional[bool] = None
     subscription_tier: Optional[SubscriptionTier] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    company: Optional[str] = None
+    country: Optional[str] = None
+
+
+class AdminPasswordReset(BaseModel):
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class FeaturePermissionsUpdate(BaseModel):
+    """Partial update — any field omitted is left unchanged."""
+    analysesPerMonth: Optional[int] = None
+    maxFileSizeMb: Optional[int] = None
+    maxFilesPerAnalysis: Optional[int] = None
+    allowedModes: Optional[List[str]] = None
+    allowedExports: Optional[List[str]] = None
+    canUploadFiles: Optional[bool] = None
+    canCreateProjects: Optional[bool] = None
+    canViewHistory: Optional[bool] = None
+    canDownloadReports: Optional[bool] = None
+    canSendRfis: Optional[bool] = None
+    canViewAuditLog: Optional[bool] = None
+    blockchainAnchoring: Optional[bool] = None
+    canRunEstimation: Optional[bool] = None
+    estimationCountries: Optional[List[str]] = None
+    showDashboardStats: Optional[bool] = None
+    showActivityChart: Optional[bool] = None
+
+
+class ImpersonateRequest(BaseModel):
+    user_id: str
 
 
 TokenResponse.model_rebuild()

@@ -1,4 +1,4 @@
-"""FastAPI entry point."""
+"""FastAPI entry point — 3-role architecture (super_admin · detailer · fabricator)."""
 from __future__ import annotations
 
 import logging
@@ -8,6 +8,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from config import settings
 from db import ensure_indexes, get_client
+from routes.admin import router as admin_router
 from routes.analyses import router as analyses_router
 from routes.auth import router as auth_router
 from routes.estimation import router as estimation_router
@@ -25,8 +26,8 @@ logger = logging.getLogger("structmind")
 
 app = FastAPI(
     title="StructMind AI API",
-    version="3.0.0",
-    description="Structural Steel Intelligence Platform by 4XStruct Inc.",
+    version="4.0.0",
+    description="Structural Steel Intelligence Platform by 4XStruct Inc. — 3-role architecture.",
 )
 
 app.add_middleware(
@@ -45,15 +46,17 @@ app.include_router(analyses_router)
 app.include_router(rfis_router)
 app.include_router(estimation_router)
 app.include_router(platform_router)
+app.include_router(admin_router)
 
 
 @app.get("/api")
 async def root():
     return {
         "service": "StructMind AI API",
-        "version": "3.0.0",
+        "version": "4.0.0",
         "status": "ok",
         "powered_by": "4XStruct Inc.",
+        "architecture": "3-role · super_admin · detailer · fabricator",
     }
 
 
@@ -66,7 +69,7 @@ async def health():
 async def on_startup():
     await ensure_indexes()
     await seed_admin()
-    logger.info("StructMind AI backend ready")
+    logger.info("StructMind AI backend ready · v4.0.0 · 3-role architecture")
 
 
 @app.on_event("shutdown")

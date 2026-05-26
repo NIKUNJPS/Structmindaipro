@@ -2,23 +2,24 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import {
     Bell,
-    Boxes,
-    ChartLine,
+    Calculator,
     Download,
     FolderKanban,
     GaugeCircle,
     LayoutDashboard,
+    Lock,
     LogOut,
     MessageSquareQuote,
     Search,
     Settings,
-    ShieldHalf,
+    ShieldCheck,
     Sparkles,
-    UserCog,
+    SlidersHorizontal,
     Users,
 } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { useAuth } from "@/context/AuthContext";
+import { roleLabel } from "@/components/brand/RolePillSelector";
 import { api } from "@/lib/api";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -36,19 +37,20 @@ const NAV = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/projects", label: "Projects", icon: FolderKanban },
     { to: "/analyze", label: "Analyze", icon: Sparkles, accent: true },
-    { to: "/roles", label: "Role Guide", icon: UserCog },
+    { to: "/estimate", label: "Estimation", icon: Calculator },
     { to: "/rfi-tracker", label: "RFI Tracker", icon: MessageSquareQuote },
     { to: "/outputs", label: "Outputs", icon: Download },
-    { to: "/risk-dashboard", label: "Risk Console", icon: ShieldHalf },
 ];
 
 const ADMIN_NAV = [
-    { to: "/admin/users", label: "Admin · Users", icon: Users },
-    { to: "/admin/audit-log", label: "Admin · Audit Log", icon: GaugeCircle },
+    { to: "/admin/users", label: "Users", icon: Users },
+    { to: "/admin/permissions", label: "Permissions", icon: SlidersHorizontal },
+    { to: "/admin/audit-log", label: "Audit Log", icon: GaugeCircle },
+    { to: "/admin/analytics", label: "Analytics", icon: ShieldCheck },
 ];
 
 export function AppShell({ children }) {
-    const { user, logout } = useAuth();
+    const { user, logout, impersonation, stopImpersonation } = useAuth();
     const nav = useNavigate();
     const loc = useLocation();
     const [notifications, setNotifications] = useState({ items: [], unread: 0 });
@@ -72,13 +74,37 @@ export function AppShell({ children }) {
     };
 
     const initials = `${user?.first_name?.[0] || ""}${user?.last_name?.[0] || ""}`.toUpperCase() || "SM";
+    const isSuperAdmin = user?.role === "super_admin";
 
     return (
         <div className="flex h-screen overflow-hidden bg-background text-ink">
+            {/* IMPERSONATION BANNER */}
+            {impersonation && (
+                <div
+                    data-testid="impersonation-banner"
+                    className="absolute left-0 right-0 top-0 z-50 flex items-center justify-between bg-destructive px-6 py-2 font-mono text-[11px] uppercase tracking-wider text-white"
+                >
+                    <div className="flex items-center gap-2">
+                        <Lock size={12} />
+                        Impersonating <span className="text-gold">{impersonation.email}</span> · read-only · {impersonation.expiresInMinutes || 15} min
+                    </div>
+                    <button
+                        data-testid="stop-impersonation"
+                        onClick={() => {
+                            stopImpersonation();
+                            nav("/admin/users");
+                        }}
+                        className="border border-white px-2 py-0.5 hover:bg-white hover:text-destructive"
+                    >
+                        Exit impersonation
+                    </button>
+                </div>
+            )}
+
             {/* SIDEBAR */}
             <aside
                 data-testid="app-sidebar"
-                className="flex w-[260px] flex-shrink-0 flex-col bg-navy text-white"
+                className={`flex w-[260px] flex-shrink-0 flex-col bg-navy text-white ${impersonation ? "mt-8" : ""}`}
             >
                 <div className="px-6 pt-8 pb-6">
                     <Logo variant="light" size="md" />
@@ -97,7 +123,7 @@ export function AppShell({ children }) {
                             </div>
                             <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] text-gold">
                                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-gold" />
-                                {user?.role}
+                                {roleLabel(user?.role)}
                             </div>
                         </div>
                     </div>
@@ -128,10 +154,10 @@ export function AppShell({ children }) {
                             </Link>
                         );
                     })}
-                    {user?.role === "admin" && (
+                    {isSuperAdmin && (
                         <>
                             <div className="mt-6 px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/40">
-                                Admin
+                                Super Admin
                             </div>
                             {ADMIN_NAV.map((n) => {
                                 const Icon = n.icon;
@@ -140,7 +166,7 @@ export function AppShell({ children }) {
                                     <Link
                                         key={n.to}
                                         to={n.to}
-                                        data-testid={`nav-${n.to.replace(/\//g, "-").slice(1)}`}
+                                        data-testid={`nav-admin-${n.label.toLowerCase().replace(/\s/g, "-")}`}
                                         className={`mb-1 flex items-center gap-3 border-l-2 px-4 py-2.5 font-heading text-sm uppercase tracking-wide transition-all ${
                                             active
                                                 ? "border-gold bg-white/5 text-gold"
@@ -182,7 +208,7 @@ export function AppShell({ children }) {
             </aside>
 
             {/* MAIN */}
-            <div className="flex min-w-0 flex-1 flex-col">
+            <div className={`flex min-w-0 flex-1 flex-col ${impersonation ? "mt-8" : ""}`}>
                 <header className="flex h-16 items-center justify-between border-b border-ink-line bg-white px-8">
                     <div className="relative w-full max-w-md">
                         <Search
@@ -272,7 +298,7 @@ export function AppShell({ children }) {
                                             {user?.first_name}
                                         </div>
                                         <div className="font-mono text-[10px] uppercase tracking-wider text-ink-muted">
-                                            {user?.subscription_tier}
+                                            {roleLabel(user?.role)}
                                         </div>
                                     </div>
                                 </button>

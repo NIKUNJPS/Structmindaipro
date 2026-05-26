@@ -40,15 +40,6 @@ from security import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-# Default subscription limits by tier
-TIER_LIMITS = {
-    "free": {"analyses_per_month": 5, "max_file_size_mb": 10, "modes_available": ["PHASE_1", "SUMMARY", "CHAT_ASSISTANT"]},
-    "starter": {"analyses_per_month": 30, "max_file_size_mb": 50, "modes_available": ["*"]},
-    "pro": {"analyses_per_month": 150, "max_file_size_mb": 200, "modes_available": ["*"]},
-    "enterprise": {"analyses_per_month": 10000, "max_file_size_mb": 500, "modes_available": ["*"]},
-}
-
-
 def _public_user(u: dict) -> dict:
     return {
         "id": u["id"],
@@ -63,8 +54,8 @@ def _public_user(u: dict) -> dict:
         "is_verified": u.get("is_verified", False),
         "is_active": u.get("is_active", True),
         "subscription_tier": u.get("subscription_tier", "free"),
+        "created_by": u.get("created_by"),
         "usage_this_month": u.get("usage_this_month", {"analyses": 0, "files_processed": 0, "total_file_size_mb": 0}),
-        "limits": u.get("limits", TIER_LIMITS["free"]),
         "created_at": u.get("created_at", datetime.now(timezone.utc)),
     }
 
@@ -112,8 +103,8 @@ async def signup(data: SignupRequest):
         "is_verified": False,
         "is_active": True,
         "subscription_tier": "free",
+        "created_by": None,
         "usage_this_month": {"analyses": 0, "files_processed": 0, "total_file_size_mb": 0},
-        "limits": TIER_LIMITS["free"],
         "otp_hash": hash_otp(otp),
         "otp_purpose": "signup",
         "otp_expiry": (now + timedelta(seconds=300)).isoformat(),

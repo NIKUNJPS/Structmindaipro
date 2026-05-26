@@ -1,17 +1,23 @@
-"""File upload & download routes (local storage)."""
+"""File upload & download routes (local storage). Wired to feature_permissions (file size cap)."""
 from __future__ import annotations
 
+import hashlib
 import mimetypes
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from config import settings
 from db import get_db
-from security import get_current_user, sha256_hex
+from middleware.permission_guard import (
+    audit_log,
+    check_feature,
+    check_file_size,
+    load_permissions,
+)
+from security import block_write_if_readonly, get_current_user, sha256_hex
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
@@ -28,10 +34,15 @@ def _now() -> str:
 
 @router.post("/upload")
 async def upload_file(
+    request: Request,
     file: UploadFile = File(...),
     project_id: str | None = Form(None),
     user=Depends(get_current_user),
+    perms: dict = Depends(load_permissions),
 ):
+    block_write_if_readonly(user)
+    if user["role"] != "super_admin":
+        check_feature(perms, "canUploadFiles")
     db = get_db()
     ext = Path(file.filename or "file").suffix.lower()
     if ext and ext not in ALLOWED_EXT:
@@ -43,8 +54,8 @@ async def upload_file(
     dest = Path(settings.upload_dir) / storage_name
 
     size = 0
-    max_bytes = settings.max_upload_mb * 1024 * 1024
-    import hashlib
+    cap_mb = perms.get("maxFileSizeMb", 25) if user["role"] != "super_admin" else settings.max_upload_mb
+    max_bytes = cap_mb * 1024 * 1024
 
     sha = hashlib.sha256()
     with open(dest, "wb") as out:
@@ -56,10 +67,15 @@ async def upload_file(
             if size > max_bytes:
                 out.close()
                 dest.unlink(missing_ok=True)
-                raise HTTPException(status_code=413, detail=f"File exceeds {settings.max_upload_mb}MB limit")
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File exceeds your per-upload cap of {cap_mb} MB.",
+                )
             sha.update(buf)
             out.write(buf)
     file_hash = sha.hexdigest()
+    size_mb = round(size / (1024 * 1024), 2)
+    check_file_size(perms, size_mb)  # double-check post-write
     mime = file.content_type or mimetypes.guess_type(file.filename or "")[0] or "application/octet-stream"
 
     # Project access check
@@ -67,7 +83,7 @@ async def upload_file(
         p = await db.projects.find_one({"id": project_id})
         if not p:
             raise HTTPException(status_code=404, detail="Project not found")
-        if user["role"] != "admin" and p["owner_id"] != user["id"] and not any(
+        if user["role"] != "super_admin" and p["owner_id"] != user["id"] and not any(
             t.get("user_id") == user["id"] for t in p.get("team_members", [])
         ):
             raise HTTPException(status_code=403, detail="Access denied to project")
@@ -80,7 +96,7 @@ async def upload_file(
         "storage_key": storage_name,
         "mime_type": mime,
         "size_bytes": size,
-        "size_mb": round(size / (1024 * 1024), 2),
+        "size_mb": size_mb,
         "is_chunked": size > 8 * 1024 * 1024,
         "processing_status": "ready",
         "metadata": {},
@@ -88,7 +104,6 @@ async def upload_file(
         "created_at": now,
     }
     await db.files.insert_one(doc)
-    # Update user usage
     await db.users.update_one(
         {"id": user["id"]},
         {
@@ -98,6 +113,8 @@ async def upload_file(
             }
         },
     )
+    await audit_log(user["id"], "file.upload", "file", fid, request,
+                    extra={"name": doc["original_name"], "size_mb": size_mb})
     doc.pop("_id", None)
     return doc
 
@@ -117,8 +134,7 @@ async def download_file(fid: str, user=Depends(get_current_user)):
     f = await db.files.find_one({"id": fid})
     if not f:
         raise HTTPException(status_code=404, detail="File not found")
-    if user["role"] != "admin" and f["uploaded_by"] != user["id"]:
-        # also allow project teammates
+    if user["role"] != "super_admin" and f["uploaded_by"] != user["id"]:
         if f.get("project_id"):
             p = await db.projects.find_one({"id": f["project_id"]})
             if not p or (p["owner_id"] != user["id"] and not any(
@@ -134,18 +150,20 @@ async def download_file(fid: str, user=Depends(get_current_user)):
 
 
 @router.delete("/{fid}")
-async def delete_file(fid: str, user=Depends(get_current_user)):
+async def delete_file(fid: str, request: Request, user=Depends(get_current_user)):
+    block_write_if_readonly(user)
     db = get_db()
     f = await db.files.find_one({"id": fid})
     if not f:
         raise HTTPException(status_code=404, detail="File not found")
-    if user["role"] != "admin" and f["uploaded_by"] != user["id"]:
+    if user["role"] != "super_admin" and f["uploaded_by"] != user["id"]:
         raise HTTPException(status_code=403, detail="Access denied")
     try:
         (Path(settings.upload_dir) / f["storage_key"]).unlink(missing_ok=True)
     except Exception:
         pass
     await db.files.delete_one({"id": fid})
+    await audit_log(user["id"], "file.delete", "file", fid, request)
     return {"message": "File deleted"}
 
 

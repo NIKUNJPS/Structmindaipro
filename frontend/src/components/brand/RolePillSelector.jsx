@@ -1,13 +1,15 @@
-import { HardHat, Wrench, Ruler, Calculator, Factory, Network } from "lucide-react";
+import { HardHat, Factory, Ruler } from "lucide-react";
 
 export const ROLES = [
-    { id: "detailer", label: "Detailer", icon: Ruler },
-    { id: "modular", label: "Modular", icon: Network },
-    { id: "fabricator", label: "Fabricator", icon: Factory },
-    { id: "engineer", label: "Engineer", icon: HardHat },
-    { id: "pm", label: "Project Manager", icon: Wrench },
-    { id: "estimator", label: "Estimator", icon: Calculator },
+    { id: "detailer", label: "Detailer", icon: Ruler, tag: "Shop drawings · BOMs · models" },
+    { id: "fabricator", label: "Fabricator", icon: Factory, tag: "Tonnage · process · per-ton band" },
 ];
+
+export const ROLE_COLORS = {
+    detailer: "#f5a800",
+    fabricator: "#f97316",
+    super_admin: "#0d2240",
+};
 
 export function RolePillSelector({ value, onChange, testIdPrefix = "role" }) {
     return (
@@ -37,4 +39,11 @@ export function RolePillSelector({ value, onChange, testIdPrefix = "role" }) {
             })}
         </div>
     );
+}
+
+/** Default role label (used in nav, badges). */
+export function roleLabel(role) {
+    if (role === "super_admin") return "Super Admin";
+    const r = ROLES.find((r) => r.id === role);
+    return r?.label || role;
 }

@@ -2,30 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useDropzone } from "react-dropzone";
 import {
-    AlertCircle,
-    ArrowRight,
     CheckCircle2,
     CloudUpload,
     FileIcon,
-    Lock,
     Sparkles,
     Trash2,
-    X,
 } from "lucide-react";
 import { api, errMessage } from "@/lib/api";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-
-const GROUPS = [
-    "Project Intake",
-    "Quality Control",
-    "Quantification",
-    "Commercial",
-    "Scheduling",
-    "Specialist",
-    "Assistant",
-];
 
 export default function AnalyzeWizard() {
     const { id: projectId } = useParams();
@@ -34,20 +20,23 @@ export default function AnalyzeWizard() {
     const [files, setFiles] = useState([]);
     const [uploading, setUploading] = useState(false);
     const [modes, setModes] = useState([]);
+    const [groups, setGroups] = useState([]);
     const [selectedMode, setSelectedMode] = useState(null);
     const [instructions, setInstructions] = useState("");
     const [running, setRunning] = useState(false);
+    const [loadingModes, setLoadingModes] = useState(true);
 
     useEffect(() => {
         (async () => {
             try {
                 const { data } = await api.get("/api/analyses/modes");
-                setModes(data.modes);
-                const first = data.modes.find((m) => m.allowed);
-                if (first) setSelectedMode(first.id);
+                setModes(data.modes || []);
+                setGroups(data.groups || []);
+                if (data.modes?.length) setSelectedMode(data.modes[0].id);
             } catch (e) {
                 toast.error(errMessage(e));
             }
+            setLoadingModes(false);
         })();
     }, []);
 
@@ -100,7 +89,7 @@ export default function AnalyzeWizard() {
 
     const runAnalysis = async () => {
         if (!selectedMode) {
-            toast.error("Pick an AI mode first");
+            toast.error("Pick a mode first");
             return;
         }
         setRunning(true);
@@ -121,12 +110,12 @@ export default function AnalyzeWizard() {
 
     const grouped = useMemo(() => {
         const out = {};
-        for (const g of GROUPS) out[g] = [];
+        for (const g of groups) out[g] = [];
         for (const m of modes) {
             (out[m.group] ||= []).push(m);
         }
         return out;
-    }, [modes]);
+    }, [modes, groups]);
 
     const pickedMode = modes.find((m) => m.id === selectedMode);
 
@@ -138,8 +127,8 @@ export default function AnalyzeWizard() {
                     Submit design package
                 </h1>
                 <p className="mt-3 max-w-3xl text-ink-muted">
-                    Drop drawings, models & specs. Pick an AI mode. We auto-detect scope
-                    and generate persona-specific deliverables.
+                    Drop drawings, models & specs. Pick a mode enabled by your administrator.
+                    STRUCTMIND CORE generates role-specific deliverables.
                 </p>
             </div>
 
@@ -174,7 +163,7 @@ export default function AnalyzeWizard() {
                                 Drop drawings, models & specs
                             </div>
                             <div className="mt-2 font-mono text-[11px] uppercase tracking-wider text-ink-muted">
-                                PDF · DWG · DXF · IFC · RVT · NWD · NC1 · DSTV · XLSX · up to 500 MB
+                                PDF · DWG · DXF · IFC · RVT · NWD · NC1 · DSTV · XLSX
                             </div>
                             <div className="mt-4 inline-flex items-center gap-2 border border-navy bg-white px-4 py-2 font-heading text-sm font-bold uppercase tracking-wider text-navy">
                                 Browse files
@@ -246,60 +235,61 @@ export default function AnalyzeWizard() {
                                 02 · Mode
                             </div>
                             <div className="font-mono text-[10px] uppercase tracking-wider text-ink-muted">
-                                {modes.length} modes
+                                {modes.length} mode{modes.length === 1 ? "" : "s"} enabled
                             </div>
                         </div>
-                        {modes.length === 0 ? (
+                        {loadingModes ? (
                             <Skeleton className="mt-4 h-64 rounded-none" />
+                        ) : modes.length === 0 ? (
+                            <div
+                                data-testid="no-modes-enabled"
+                                className="mt-6 border border-dashed border-ink-line bg-background p-6 text-center"
+                            >
+                                <div className="font-heading text-base font-bold uppercase text-navy">
+                                    No analysis modes enabled
+                                </div>
+                                <div className="mt-2 text-sm text-ink-muted">
+                                    Your super admin has not yet enabled any AI modes for your account.
+                                    Contact them to unlock the modes you need.
+                                </div>
+                            </div>
                         ) : (
                             <div className="mt-5 max-h-[520px] space-y-5 overflow-y-auto pr-1">
-                                {GROUPS.map((g) => (
-                                    <div key={g}>
-                                        <div className="sticky top-0 z-10 bg-white pb-1 font-mono text-[9px] font-bold uppercase tracking-[0.22em] text-gold">
-                                            {g}
-                                        </div>
-                                        <div className="space-y-2 pt-1">
-                                            {(grouped[g] || []).map((m) => (
-                                                <button
-                                                    key={m.id}
-                                                    type="button"
-                                                    disabled={!m.allowed}
-                                                    onClick={() => setSelectedMode(m.id)}
-                                                    data-testid={`mode-${m.id}`}
-                                                    className={`group flex w-full items-start gap-2 border p-3 text-left transition-all ${
-                                                        selectedMode === m.id
-                                                            ? "border-gold bg-gold-pale"
-                                                            : m.allowed
-                                                              ? "border-ink-line bg-white hover:border-navy"
-                                                              : "border-ink-line bg-background opacity-60"
-                                                    }`}
-                                                >
-                                                    <div className="flex-1">
-                                                        <div className="flex items-center gap-2">
+                                {groups.map((g) => (
+                                    (grouped[g] || []).length > 0 && (
+                                        <div key={g}>
+                                            <div className="sticky top-0 z-10 bg-white pb-1 font-mono text-[9px] font-bold uppercase tracking-[0.22em] text-gold">
+                                                {g}
+                                            </div>
+                                            <div className="space-y-2 pt-1">
+                                                {(grouped[g] || []).map((m) => (
+                                                    <button
+                                                        key={m.id}
+                                                        type="button"
+                                                        onClick={() => setSelectedMode(m.id)}
+                                                        data-testid={`mode-${m.id}`}
+                                                        className={`group flex w-full items-start gap-2 border p-3 text-left transition-all ${
+                                                            selectedMode === m.id
+                                                                ? "border-gold bg-gold-pale"
+                                                                : "border-ink-line bg-white hover:border-navy"
+                                                        }`}
+                                                    >
+                                                        <div className="flex-1">
                                                             <div className="font-heading text-sm font-bold uppercase tracking-tight text-navy">
                                                                 {m.label}
                                                             </div>
-                                                            {m.pro && (
-                                                                <span className="border border-navy bg-navy px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-gold">
-                                                                    PRO
-                                                                </span>
-                                                            )}
-                                                            {!m.allowed && (
-                                                                <Lock size={10} className="text-ink-muted" />
-                                                            )}
+                                                            <div className="mt-1 line-clamp-2 text-xs text-ink-muted">
+                                                                {m.description}
+                                                            </div>
+                                                            <div className="mt-1 font-mono text-[9px] uppercase tracking-wider text-ink-muted">
+                                                                {m.time}
+                                                            </div>
                                                         </div>
-                                                        <div className="mt-1 line-clamp-2 text-xs text-ink-muted">
-                                                            {m.description}
-                                                        </div>
-                                                        <div className="mt-1 font-mono text-[9px] uppercase tracking-wider text-ink-muted">
-                                                            {m.time}
-                                                            {!m.allowed ? " · role-locked" : ""}
-                                                        </div>
-                                                    </div>
-                                                </button>
-                                            ))}
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
+                                    )
                                 ))}
                             </div>
                         )}
@@ -307,7 +297,7 @@ export default function AnalyzeWizard() {
                         <button
                             type="button"
                             onClick={runAnalysis}
-                            disabled={running || !selectedMode}
+                            disabled={running || !selectedMode || modes.length === 0}
                             data-testid="run-analysis-btn"
                             className="btn-gold mt-6 w-full"
                         >

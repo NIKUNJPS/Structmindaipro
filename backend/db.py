@@ -39,3 +39,6 @@ async def ensure_indexes() -> None:
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.audit_log.create_index([("timestamp", -1)])
     await db.audit_log.create_index("user_id")
+    await db.feature_permissions.create_index("userId", unique=True)
+    await db.usage_records.create_index([("userId", 1), ("yearMonth", 1)], unique=True)
+    await db.estimates.create_index([("user_id", 1), ("created_at", -1)])

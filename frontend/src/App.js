@@ -21,14 +21,28 @@ import AnalysisReport from "@/pages/AnalysisReport";
 import RfiKanban from "@/pages/RfiKanban";
 import Outputs from "@/pages/Outputs";
 import RiskDashboard from "@/pages/RiskDashboard";
-import RoleGuide from "@/pages/RoleGuide";
+import Estimation from "@/pages/Estimation";
 import { SettingsProfile, SettingsSecurity } from "@/pages/Settings";
-import { AdminUsers, AdminAuditLog } from "@/pages/Admin";
+
+import { AdminUsers } from "@/pages/admin/AdminUsers";
+import { AdminPermissionsList, AdminPermissionEditor } from "@/pages/admin/AdminPermissions";
+import { AdminAuditLog } from "@/pages/admin/AdminAuditLog";
+import { AdminAnalytics } from "@/pages/admin/AdminAnalytics";
 
 function AppRoute({ children }) {
     return (
         <ProtectedRoute>
             <AppShell>{children}</AppShell>
+        </ProtectedRoute>
+    );
+}
+
+function AdminAppRoute({ children }) {
+    return (
+        <ProtectedRoute>
+            <AdminRoute>
+                <AppShell>{children}</AppShell>
+            </AdminRoute>
         </ProtectedRoute>
     );
 }
@@ -57,135 +71,28 @@ export default function App() {
                     <Route path="/verify-otp" element={<VerifyOtp />} />
                     <Route path="/forgot-password" element={<ForgotPassword />} />
 
-                    <Route
-                        path="/dashboard"
-                        element={
-                            <AppRoute>
-                                <Dashboard />
-                            </AppRoute>
-                        }
-                    />
-                    <Route
-                        path="/projects"
-                        element={
-                            <AppRoute>
-                                <Projects />
-                            </AppRoute>
-                        }
-                    />
-                    <Route
-                        path="/projects/:id"
-                        element={
-                            <AppRoute>
-                                <ProjectDetail />
-                            </AppRoute>
-                        }
-                    />
-                    <Route
-                        path="/projects/:id/analyze"
-                        element={
-                            <AppRoute>
-                                <AnalyzeWizard />
-                            </AppRoute>
-                        }
-                    />
-                    <Route
-                        path="/analyze"
-                        element={
-                            <AppRoute>
-                                <AnalyzeWizard />
-                            </AppRoute>
-                        }
-                    />
-                    <Route
-                        path="/analyses/:id"
-                        element={
-                            <AppRoute>
-                                <AnalysisReport />
-                            </AppRoute>
-                        }
-                    />
-                    <Route
-                        path="/rfi-tracker"
-                        element={
-                            <AppRoute>
-                                <RfiKanban />
-                            </AppRoute>
-                        }
-                    />
-                    <Route
-                        path="/roles"
-                        element={
-                            <AppRoute>
-                                <RoleGuide />
-                            </AppRoute>
-                        }
-                    />
-                    <Route
-                        path="/outputs"
-                        element={
-                            <AppRoute>
-                                <Outputs />
-                            </AppRoute>
-                        }
-                    />
-                    <Route
-                        path="/risk-dashboard"
-                        element={
-                            <AppRoute>
-                                <RiskDashboard />
-                            </AppRoute>
-                        }
-                    />
-                    <Route
-                        path="/settings"
-                        element={<Navigate to="/settings/profile" replace />}
-                    />
-                    <Route
-                        path="/settings/profile"
-                        element={
-                            <AppRoute>
-                                <SettingsProfile />
-                            </AppRoute>
-                        }
-                    />
-                    <Route
-                        path="/settings/security"
-                        element={
-                            <AppRoute>
-                                <SettingsSecurity />
-                            </AppRoute>
-                        }
-                    />
+                    <Route path="/dashboard"            element={<AppRoute><Dashboard /></AppRoute>} />
+                    <Route path="/projects"             element={<AppRoute><Projects /></AppRoute>} />
+                    <Route path="/projects/:id"         element={<AppRoute><ProjectDetail /></AppRoute>} />
+                    <Route path="/projects/:id/analyze" element={<AppRoute><AnalyzeWizard /></AppRoute>} />
+                    <Route path="/analyze"              element={<AppRoute><AnalyzeWizard /></AppRoute>} />
+                    <Route path="/analyses/:id"         element={<AppRoute><AnalysisReport /></AppRoute>} />
+                    <Route path="/rfi-tracker"          element={<AppRoute><RfiKanban /></AppRoute>} />
+                    <Route path="/outputs"              element={<AppRoute><Outputs /></AppRoute>} />
+                    <Route path="/risk-dashboard"       element={<AppRoute><RiskDashboard /></AppRoute>} />
+                    <Route path="/estimate"             element={<AppRoute><Estimation /></AppRoute>} />
 
-                    <Route
-                        path="/admin"
-                        element={<Navigate to="/admin/users" replace />}
-                    />
-                    <Route
-                        path="/admin/users"
-                        element={
-                            <ProtectedRoute>
-                                <AdminRoute>
-                                    <AppShell>
-                                        <AdminUsers />
-                                    </AppShell>
-                                </AdminRoute>
-                            </ProtectedRoute>
-                        }
-                    />
-                    <Route
-                        path="/admin/audit-log"
-                        element={
-                            <ProtectedRoute>
-                                <AdminRoute>
-                                    <AppShell>
-                                        <AdminAuditLog />
-                                    </AppShell>
-                                </AdminRoute>
-                            </ProtectedRoute>
-                        }
-                    />
+                    <Route path="/settings"          element={<Navigate to="/settings/profile" replace />} />
+                    <Route path="/settings/profile"  element={<AppRoute><SettingsProfile /></AppRoute>} />
+                    <Route path="/settings/security" element={<AppRoute><SettingsSecurity /></AppRoute>} />
+
+                    {/* SUPER ADMIN */}
+                    <Route path="/admin"                    element={<Navigate to="/admin/users" replace />} />
+                    <Route path="/admin/users"              element={<AdminAppRoute><AdminUsers /></AdminAppRoute>} />
+                    <Route path="/admin/permissions"        element={<AdminAppRoute><AdminPermissionsList /></AdminAppRoute>} />
+                    <Route path="/admin/permissions/:uid"   element={<AdminAppRoute><AdminPermissionEditor /></AdminAppRoute>} />
+                    <Route path="/admin/audit-log"          element={<AdminAppRoute><AdminAuditLog /></AdminAppRoute>} />
+                    <Route path="/admin/analytics"          element={<AdminAppRoute><AdminAnalytics /></AdminAppRoute>} />
 
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

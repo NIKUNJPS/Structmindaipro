@@ -1,24 +1,40 @@
-"""Analysis routes: queue, status, list, export, rerun, result."""
+"""Analysis routes: queue, status, list, export, rerun, result.
+
+Uses prompts/prompt_router for role-aware prompt composition and middleware/permission_guard
+for granular feature gating (mode access, monthly cap, export format, file size, audit log).
+"""
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
-from ai_modes import MODES, DRAWING_PROTOCOL, list_modes_for_role, mode_label
 from config import settings
 from db import get_db
-from demo_prompts import get_demo_prompt
 from export_service import EXPORT_DIR, generate_all_exports
 from gemini_service import run_analysis
+from middleware.permission_guard import (
+    audit_log,
+    bump_usage,
+    check_export_access,
+    check_feature,
+    check_mode_access,
+    check_usage_limit,
+    load_permissions,
+)
 from models import AnalysisCreate
-from role_prompts import get_role_lens
-from security import get_current_user, sha256_hex
+from prompts.prompt_router import (
+    get_mode_meta,
+    get_mode_prompt,
+    get_system_prompt,
+    list_modes_for_role,
+)
+from prompts.shared_rules import GLOBAL_FORMAT_RULES
+from security import block_write_if_readonly, get_current_user, sha256_hex
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analyses", tags=["analyses"])
@@ -29,7 +45,7 @@ def _now_iso() -> str:
 
 
 async def _run_analysis_task(analysis_id: str):
-    """Background task to call Gemini, update analysis, generate exports."""
+    """Background task to call STRUCTMIND CORE, update analysis, generate exports."""
     db = get_db()
     started = time.time()
     analysis = await db.analyses.find_one({"id": analysis_id})
@@ -37,11 +53,12 @@ async def _run_analysis_task(analysis_id: str):
         logger.error("Analysis %s not found", analysis_id)
         return
 
-    mode = MODES.get(analysis["mode"])
-    if not mode:
+    mode_id = analysis["mode"]
+    meta = get_mode_meta(mode_id)
+    if not meta:
         await db.analyses.update_one(
             {"id": analysis_id},
-            {"$set": {"status": "failed", "error_message": "Unknown mode", "completed_at": _now_iso()}},
+            {"$set": {"status": "failed", "error_message": f"Unknown mode {mode_id}", "completed_at": _now_iso()}},
         )
         return
 
@@ -57,7 +74,6 @@ async def _run_analysis_task(analysis_id: str):
     for f in file_docs:
         path = Path(settings.upload_dir) / f["storage_key"]
         if path.exists() and f.get("mime_type"):
-            # gemini supports pdf / image / csv / text
             mt = f["mime_type"]
             if mt in {
                 "application/pdf",
@@ -74,22 +90,30 @@ async def _run_analysis_task(analysis_id: str):
             raise RuntimeError(
                 "No LLM key configured. Set GEMINI_API_KEY or EMERGENT_LLM_KEY in /app/backend/.env"
             )
-        text_prompt = analysis.get("input_text") or get_demo_prompt(analysis["mode"])
-        # Compose role-aware system prompt: protocol + base mode prompt + role-specific lens
         requester = await db.users.find_one(
             {"id": analysis["requested_by"]}, {"_id": 0, "role": 1}
         )
         requester_role = (requester or {}).get("role", "detailer")
-        role_lens = get_role_lens(requester_role, analysis["mode"])
+
+        system_persona = get_system_prompt(requester_role)
+        mode_prompt = get_mode_prompt(requester_role, mode_id)
         composed_system_prompt = (
-            f"{DRAWING_PROTOCOL.strip()}\n\n"
-            f"## MODE: {mode['label']}\n{mode['prompt']}\n\n"
-            f"## ROLE LENS — {requester_role.upper()}\n{role_lens}"
+            f"{system_persona.strip()}\n\n"
+            f"## MODE: {meta['label']}\n{mode_prompt}\n\n"
+            f"## GLOBAL FORMATTING\n{GLOBAL_FORMAT_RULES}"
         )
+
+        user_text = analysis.get("input_text") or ""
+        if not user_text.strip():
+            user_text = (
+                f"Run the {meta['label']} mode on the attached drawings / inputs. "
+                f"Follow every instruction in the mode prompt verbatim."
+            )
+
         output, model_used = await run_analysis(
             session_id=analysis_id,
             system_prompt=composed_system_prompt,
-            user_text=text_prompt,
+            user_text=user_text,
             file_paths=file_pairs,
         )
     except Exception as e:  # noqa: BLE001
@@ -109,24 +133,23 @@ async def _run_analysis_task(analysis_id: str):
     elapsed = round(time.time() - started, 2)
     output_hash = sha256_hex(output)
 
-    # Heuristic issue counting (based on severity keywords in output)
+    # Heuristic issue counting
     crit = output.upper().count("CRITICAL")
     major = output.upper().count("MAJOR")
     minor = output.upper().count("MINOR") + output.upper().count("OBSERVATION")
     issues = {"critical": crit, "major": major, "minor": minor, "total": crit + major + minor}
     quality = max(0, min(100, 100 - crit * 8 - major * 3 - minor * 1))
 
-    # Generate exports
     proj = await db.projects.find_one({"id": analysis.get("project_id")}) if analysis.get("project_id") else None
-    meta = {
+    export_meta = {
         "id": analysis_id,
-        "mode_label": mode["label"],
+        "mode_label": meta["label"],
         "project_name": proj["name"] if proj else "Quick Analysis",
         "completed_at": _now_iso(),
         "model_used": model_used,
         "blockchain_hash": output_hash,
     }
-    exports = generate_all_exports(output, meta)
+    exports = generate_all_exports(output, export_meta)
 
     await db.analyses.update_one(
         {"id": analysis_id},
@@ -154,7 +177,6 @@ async def _run_analysis_task(analysis_id: str):
         },
     )
 
-    # Notify user
     user_id = analysis["requested_by"]
     await db.notifications.insert_one(
         {
@@ -162,116 +184,79 @@ async def _run_analysis_task(analysis_id: str):
             "user_id": user_id,
             "type": "analysis_complete",
             "title": "Analysis complete",
-            "message": f"{mode['label']} completed in {elapsed}s",
+            "message": f"{meta['label']} completed in {elapsed}s",
             "is_read": False,
             "action_url": f"/analyses/{analysis_id}",
             "created_at": _now_iso(),
         }
     )
 
-    # Increment usage
     await db.users.update_one(
         {"id": user_id}, {"$inc": {"usage_this_month.analyses": 1}}
     )
 
 
 @router.get("/modes")
-async def list_modes(user=Depends(get_current_user)):
-    items = list_modes_for_role(user["role"])
-    for m in items:
-        m["demo_prompt"] = get_demo_prompt(m["id"])
-    return {"modes": items, "groups": [
-        "Project Intake", "Quality Control", "Quantification", "Commercial",
-        "Scheduling", "Specialist", "Assistant",
-    ]}
+async def list_modes(user=Depends(get_current_user), perms: dict = Depends(load_permissions)):
+    """Return modes available to the current user, filtered by feature_permissions.
 
-
-@router.post("/demo")
-async def run_demo(
-    payload: dict,
-    background: BackgroundTasks,
-    user=Depends(get_current_user),
-):
-    """Fire a demo analysis for a given mode using the canned representative prompt.
-    Admins bypass role-lock so they can demo every mode. Intended for the Role Guide / demo console.
+    Locked modes are NOT returned (per spec: hide, do not gray-out).
+    Super admin sees every role's modes.
     """
-    db = get_db()
-    mode_id = payload.get("mode")
-    if mode_id not in MODES:
-        raise HTTPException(status_code=400, detail="Unknown mode")
-    mode = MODES[mode_id]
+    role = user["role"]
+    if role == "super_admin":
+        items = list_modes_for_role("super_admin")
+    else:
+        all_for_role = list_modes_for_role(role)
+        allowed = set(perms.get("allowedModes", []))
+        wildcard = "*" in allowed
+        items = [m for m in all_for_role if wildcard or m["id"] in allowed]
 
-    # Admins can demo every mode; everyone else gets role-locked
-    if user["role"] != "admin" and user["role"] not in mode["roles"]:
-        raise HTTPException(status_code=403, detail="Your role cannot run this mode")
-
-    full = await db.users.find_one({"id": user["id"]})
-    limit = full.get("limits", {}).get("analyses_per_month", 5)
-    used = full.get("usage_this_month", {}).get("analyses", 0)
-    if used >= limit and user["role"] != "admin":
-        raise HTTPException(status_code=402, detail=f"Monthly analysis limit reached ({limit}).")
-
-    now = _now_iso()
-    aid = sha256_hex(f"demo:{user['id']}:{mode_id}:{now}")[:24]
-    doc = {
-        "id": aid,
-        "project_id": None,
-        "file_ids": [],
-        "requested_by": user["id"],
-        "requested_by_name": f"{full.get('first_name','')} {full.get('last_name','')}".strip(),
-        "mode": mode_id,
-        "mode_label": mode["label"],
-        "status": "queued",
-        "stage": "queued",
-        "model_used": "",
-        "input_text": get_demo_prompt(mode_id),
-        "is_demo": True,
-        "output_markdown": "",
-        "processing_time_seconds": 0,
-        "issues_found": {"critical": 0, "major": 0, "minor": 0, "total": 0},
-        "quality_score": 0,
-        "blockchain_hash": "",
-        "exports": [],
-        "error_message": "",
-        "created_at": now,
-        "completed_at": None,
-    }
-    await db.analyses.insert_one(doc)
-    background.add_task(_run_analysis_task, aid)
-    doc.pop("_id", None)
-    return doc
+    # Group set is dynamic — derived from the visible modes
+    groups: list[str] = []
+    for m in items:
+        if m["group"] not in groups:
+            groups.append(m["group"])
+    return {"modes": items, "groups": groups}
 
 
 @router.post("")
 async def create_analysis(
     data: AnalysisCreate,
     background: BackgroundTasks,
+    request: Request,
     user=Depends(get_current_user),
+    perms: dict = Depends(load_permissions),
 ):
+    block_write_if_readonly(user)
     db = get_db()
-    if data.mode not in MODES:
-        raise HTTPException(status_code=400, detail="Unknown analysis mode")
-    mode = MODES[data.mode]
-    if user["role"] != "admin" and user["role"] not in mode["roles"]:
-        raise HTTPException(status_code=403, detail="Your role cannot run this mode")
 
-    # Usage enforcement
-    full = await db.users.find_one({"id": user["id"]})
-    limit = full.get("limits", {}).get("analyses_per_month", 5)
-    used = full.get("usage_this_month", {}).get("analyses", 0)
-    if used >= limit and user["role"] != "admin":
-        raise HTTPException(status_code=402, detail=f"Monthly analysis limit reached ({limit}). Upgrade plan.")
+    # Validate the mode is defined in the prompt router for this user's role
+    meta = get_mode_meta(data.mode)
+    if not meta:
+        raise HTTPException(status_code=400, detail=f"Unknown analysis mode '{data.mode}'")
+
+    check_mode_access(perms, data.mode)
+    await check_usage_limit(user["id"], perms)
+
+    if perms.get("role") != "super_admin" and not perms.get("canUploadFiles", True) and data.file_ids:
+        raise HTTPException(status_code=403, detail="File uploads are disabled for your account.")
+
+    max_files = perms.get("maxFilesPerAnalysis", 3)
+    if perms.get("role") != "super_admin" and len(data.file_ids) > max_files:
+        raise HTTPException(status_code=413, detail=f"Too many files. Cap is {max_files}.")
 
     # Project access check
     if data.project_id:
         p = await db.projects.find_one({"id": data.project_id})
         if not p:
             raise HTTPException(status_code=404, detail="Project not found")
-        if user["role"] != "admin" and p["owner_id"] != user["id"] and not any(
+        if user["role"] != "super_admin" and p["owner_id"] != user["id"] and not any(
             t.get("user_id") == user["id"] for t in p.get("team_members", [])
         ):
             raise HTTPException(status_code=403, detail="Access denied to project")
 
+    full = await db.users.find_one({"id": user["id"]})
     now = _now_iso()
     aid = sha256_hex(f"analysis:{user['id']}:{data.mode}:{now}")[:24]
     doc = {
@@ -281,7 +266,7 @@ async def create_analysis(
         "requested_by": user["id"],
         "requested_by_name": f"{full.get('first_name','')} {full.get('last_name','')}".strip(),
         "mode": data.mode,
-        "mode_label": mode["label"],
+        "mode_label": meta["label"],
         "status": "queued",
         "stage": "queued",
         "model_used": "",
@@ -297,6 +282,9 @@ async def create_analysis(
         "completed_at": None,
     }
     await db.analyses.insert_one(doc)
+    await bump_usage(user["id"])
+    await audit_log(user["id"], "analysis.create", "analysis", aid, request,
+                    extra={"mode": data.mode, "files": len(data.file_ids)})
     background.add_task(_run_analysis_task, aid)
     doc.pop("_id", None)
     return doc
@@ -312,7 +300,7 @@ async def list_analyses(
     q: dict = {}
     if project_id:
         q["project_id"] = project_id
-    if user["role"] != "admin":
+    if user["role"] != "super_admin":
         q["requested_by"] = user["id"]
     items = await db.analyses.find(q, {"_id": 0, "output_markdown": 0}).sort("created_at", -1).to_list(limit)
     return {"items": items, "total": len(items)}
@@ -324,8 +312,7 @@ async def get_analysis(aid: str, user=Depends(get_current_user)):
     a = await db.analyses.find_one({"id": aid}, {"_id": 0})
     if not a:
         raise HTTPException(status_code=404, detail="Analysis not found")
-    if user["role"] != "admin" and a["requested_by"] != user["id"]:
-        # allow teammates
+    if user["role"] != "super_admin" and a["requested_by"] != user["id"]:
         if a.get("project_id"):
             p = await db.projects.find_one({"id": a["project_id"]})
             if not p or (p["owner_id"] != user["id"] and not any(
@@ -351,14 +338,21 @@ async def get_status(aid: str, user=Depends(get_current_user)):
 
 @router.post("/{aid}/rerun")
 async def rerun_analysis(
-    aid: str, background: BackgroundTasks, user=Depends(get_current_user)
+    aid: str,
+    background: BackgroundTasks,
+    request: Request,
+    user=Depends(get_current_user),
+    perms: dict = Depends(load_permissions),
 ):
+    block_write_if_readonly(user)
     db = get_db()
     a = await db.analyses.find_one({"id": aid})
     if not a:
         raise HTTPException(status_code=404, detail="Analysis not found")
-    if user["role"] != "admin" and a["requested_by"] != user["id"]:
+    if user["role"] != "super_admin" and a["requested_by"] != user["id"]:
         raise HTTPException(status_code=403, detail="Access denied")
+    check_mode_access(perms, a["mode"])
+    await check_usage_limit(user["id"], perms)
     await db.analyses.update_one(
         {"id": aid},
         {
@@ -372,18 +366,30 @@ async def rerun_analysis(
             }
         },
     )
+    await bump_usage(user["id"])
+    await audit_log(user["id"], "analysis.rerun", "analysis", aid, request)
     background.add_task(_run_analysis_task, aid)
     return {"message": "Analysis re-queued"}
 
 
 @router.get("/{aid}/export/{fmt}")
-async def download_export(aid: str, fmt: str, user=Depends(get_current_user)):
+async def download_export(
+    aid: str,
+    fmt: str,
+    request: Request,
+    user=Depends(get_current_user),
+    perms: dict = Depends(load_permissions),
+):
     db = get_db()
     a = await db.analyses.find_one({"id": aid})
     if not a:
         raise HTTPException(status_code=404, detail="Analysis not found")
-    if user["role"] != "admin" and a["requested_by"] != user["id"]:
+    if user["role"] != "super_admin" and a["requested_by"] != user["id"]:
         raise HTTPException(status_code=403, detail="Access denied")
+    if user["role"] != "super_admin":
+        check_feature(perms, "canDownloadReports")
+    fmt_alias = {"docx": "word", "xlsx": "excel"}.get(fmt, fmt)
+    check_export_access(perms, fmt_alias)
     ext_map = {"pdf": "pdf", "docx": "docx", "xlsx": "xlsx", "csv": "csv", "markdown": "md"}
     ext = ext_map.get(fmt)
     if not ext:
@@ -399,16 +405,23 @@ async def download_export(aid: str, fmt: str, user=Depends(get_current_user)):
         "md": "text/markdown",
     }
     filename = f"{a.get('mode_label','report').replace(' ', '_')}.{ext}"
+    await audit_log(user["id"], "analysis.export", "analysis", aid, request, extra={"format": fmt})
     return FileResponse(str(path), filename=filename, media_type=media.get(ext, "application/octet-stream"))
 
 
 @router.delete("/{aid}")
-async def delete_analysis(aid: str, user=Depends(get_current_user)):
+async def delete_analysis(
+    aid: str,
+    request: Request,
+    user=Depends(get_current_user),
+):
+    block_write_if_readonly(user)
     db = get_db()
     a = await db.analyses.find_one({"id": aid})
     if not a:
         raise HTTPException(status_code=404, detail="Analysis not found")
-    if user["role"] != "admin" and a["requested_by"] != user["id"]:
+    if user["role"] != "super_admin" and a["requested_by"] != user["id"]:
         raise HTTPException(status_code=403, detail="Access denied")
     await db.analyses.delete_one({"id": aid})
+    await audit_log(user["id"], "analysis.delete", "analysis", aid, request)
     return {"message": "Analysis deleted"}

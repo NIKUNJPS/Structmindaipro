@@ -39,7 +39,7 @@ async def list_rfis(project_id: str | None = None, status: str | None = None, us
         q["project_id"] = project_id
     if status:
         q["status"] = status
-    if user["role"] != "admin":
+    if user["role"] != "super_admin":
         q["$or"] = [{"created_by": user["id"]}, {"assigned_to": user["id"]}]
     items = await db.rfis.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
     for r in items:
@@ -90,7 +90,7 @@ async def update_rfi(rid: str, data: RfiUpdate, user=Depends(get_current_user)):
     r = await db.rfis.find_one({"id": rid})
     if not r:
         raise HTTPException(status_code=404, detail="RFI not found")
-    if user["role"] != "admin" and r["created_by"] != user["id"] and r.get("assigned_to") != user["id"]:
+    if user["role"] != "super_admin" and r["created_by"] != user["id"] and r.get("assigned_to") != user["id"]:
         raise HTTPException(status_code=403, detail="Access denied")
     updates = {k: v for k, v in data.model_dump(exclude_none=True).items()}
     if updates.get("status") == "responded" and r.get("status") != "responded":
@@ -107,7 +107,7 @@ async def delete_rfi(rid: str, user=Depends(get_current_user)):
     r = await db.rfis.find_one({"id": rid})
     if not r:
         raise HTTPException(status_code=404, detail="RFI not found")
-    if user["role"] != "admin" and r["created_by"] != user["id"]:
+    if user["role"] != "super_admin" and r["created_by"] != user["id"]:
         raise HTTPException(status_code=403, detail="Only creator can delete")
     await db.rfis.delete_one({"id": rid})
     return {"message": "RFI deleted"}

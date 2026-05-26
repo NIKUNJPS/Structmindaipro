@@ -35,7 +35,7 @@ async def _project_out(db, p: dict) -> dict:
 async def list_projects(user=Depends(get_current_user)):
     db = get_db()
     q = {}
-    if user["role"] != "admin":
+    if user["role"] != "super_admin":
         q = {
             "$or": [
                 {"owner_id": user["id"]},
@@ -76,7 +76,7 @@ async def get_project(pid: str, user=Depends(get_current_user)):
     p = await db.projects.find_one({"id": pid}, {"_id": 0})
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
-    if user["role"] != "admin" and p["owner_id"] != user["id"] and not any(
+    if user["role"] != "super_admin" and p["owner_id"] != user["id"] and not any(
         t.get("user_id") == user["id"] for t in p.get("team_members", [])
     ):
         raise HTTPException(status_code=403, detail="Access denied")
@@ -89,7 +89,7 @@ async def update_project(pid: str, data: ProjectUpdate, user=Depends(get_current
     p = await db.projects.find_one({"id": pid})
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
-    if user["role"] != "admin" and p["owner_id"] != user["id"]:
+    if user["role"] != "super_admin" and p["owner_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Only owner can update")
     updates = {k: v for k, v in data.model_dump(exclude_none=True).items()}
     updates["updated_at"] = _now()
@@ -104,7 +104,7 @@ async def delete_project(pid: str, user=Depends(get_current_user)):
     p = await db.projects.find_one({"id": pid})
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
-    if user["role"] != "admin" and p["owner_id"] != user["id"]:
+    if user["role"] != "super_admin" and p["owner_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Only owner can delete")
     await db.projects.update_one({"id": pid}, {"$set": {"status": "archived", "updated_at": _now()}})
     return {"message": "Project archived"}
@@ -116,7 +116,7 @@ async def add_team_member(pid: str, payload: dict, user=Depends(get_current_user
     p = await db.projects.find_one({"id": pid})
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
-    if user["role"] != "admin" and p["owner_id"] != user["id"]:
+    if user["role"] != "super_admin" and p["owner_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Only owner can add members")
 
     email = (payload.get("email") or "").lower()
