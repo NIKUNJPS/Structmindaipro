@@ -63,7 +63,7 @@ export function AdminAnalytics() {
                     </div>
                     <div className="mt-4 h-64">
                         {data?.users_by_role?.length ? (
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                 <PieChart>
                                     <Pie
                                         data={data.users_by_role}
@@ -105,7 +105,7 @@ export function AdminAnalytics() {
                     </div>
                     <div className="mt-4 h-64">
                         {data?.top_modes_this_month?.length ? (
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                 <BarChart data={data.top_modes_this_month}>
                                     <XAxis
                                         dataKey="mode"

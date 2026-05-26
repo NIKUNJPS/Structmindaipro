@@ -177,7 +177,7 @@ export default function Dashboard() {
                             </div>
                         </div>
                         <div className="mt-6 h-64">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                 <AreaChart data={data?.activity || []}>
                                     <defs>
                                         <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
@@ -229,7 +229,7 @@ export default function Dashboard() {
                         </div>
                         <div className="mt-4 h-64">
                             {data?.mode_usage?.length ? (
-                                <ResponsiveContainer width="100%" height="100%">
+                                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                     <PieChart>
                                         <Pie
                                             data={data.mode_usage}
