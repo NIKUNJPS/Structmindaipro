@@ -1,7 +1,10 @@
 """Estimation API — Detailer + Fabricator only.
 
-Wired to feature_permissions: `canRunEstimation`, `estimationCountries`, audit logging.
-Fabricator schema requires user-provided per-ton cost range.
+Two flows are supported:
+  • POST /api/estimation/ai-calculate  → drawing-driven (PRIMARY, surfaced in UI)
+                                          Inputs: file_ids + rate_low + rate_high (+ optional project / country)
+                                          AI extracts tonnage (fabricator) or drawings+complexity (detailer).
+  • POST /api/estimation/calculate     → deterministic manual-input flow (kept for API / power users)
 """
 from __future__ import annotations
 
@@ -11,8 +14,10 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
+from config import settings
 from db import get_db
-from estimation.engine import CALCULATORS, calculate
+from estimation.ai_extract import extract_quantities
+from estimation.engine import CALCULATORS, apply_band_to_extracted, calculate
 from estimation.pdf import render_pdf
 from estimation.rates import supported_countries
 from middleware.permission_guard import (
@@ -37,53 +42,161 @@ async def list_countries(user=Depends(get_current_user), perms: dict = Depends(l
     return {"countries": [c for c in all_countries if c["code"] in allowed]}
 
 
-# ─── SCHEMA ─────────────────────────────────────────────────────────────
+# ─── SIMPLIFIED SCHEMA (AI-driven UI) ───────────────────────────────────
 @router.get("/schema/{role}")
 async def schema_for_role(role: str, user=Depends(get_current_user)):
     role = role.lower()
     if role not in ("detailer", "fabricator"):
-        raise HTTPException(status_code=400, detail=f"Estimation only supported for detailer or fabricator (got '{role}').")
-    # Lock non-super-admins to their own role's schema
+        raise HTTPException(status_code=400, detail=f"Estimation only supports detailer or fabricator (got '{role}').")
     if user["role"] != "super_admin" and role != user["role"]:
         raise HTTPException(status_code=403, detail="You may only request your own role's schema.")
 
-    schemas = {
-        "detailer": {
-            "title": "Detailing Estimate",
-            "subtitle": "Hours-based estimate from drawing scope and complexity.",
-            "fields": [
-                {"key": "drawings",         "label": "Number of drawings", "type": "number", "default": 60,  "min": 1, "max": 5000},
-                {"key": "complexity",       "label": "Complexity",         "type": "select", "default": "Medium", "options": ["Low", "Medium", "High", "AESS", "Critical"]},
-                {"key": "connection_count", "label": "Connection count",   "type": "number", "default": 320, "min": 0, "max": 50000},
-                {"key": "revisions",        "label": "Expected revision cycles", "type": "number", "default": 2,  "min": 0, "max": 20},
-                {"key": "modeling_hours",   "label": "3D modeling hours",  "type": "number", "default": 80,  "min": 0},
-                {"key": "checking_hours",   "label": "QC checking hours",  "type": "number", "default": 40,  "min": 0},
-            ],
-            "kpis": ["total_hours", "timeline_weeks", "final_amount"],
-        },
-        "fabricator": {
-            "title": "Fabrication Estimate",
-            "subtitle": "Tonnage × user-provided per-ton range. Output is a low → high range.",
-            "fields": [
-                {"key": "tonnage",            "label": "Total tonnage",                   "type": "number", "default": 220, "min": 0.1, "required": True},
-                {"key": "cost_per_ton_low",   "label": "Your per-ton cost — LOW",         "type": "number", "default": 2400, "min": 1,   "required": True, "help": "Lower bound of your shop's per-ton cost band (local currency)."},
-                {"key": "cost_per_ton_high",  "label": "Your per-ton cost — HIGH",        "type": "number", "default": 3600, "min": 1,   "required": True, "help": "Upper bound of your shop's per-ton cost band (local currency)."},
-                {"key": "material_type",      "label": "Material",                        "type": "select", "default": "Carbon Steel",
-                 "options": ["Carbon Steel", "HSS", "Galvanised", "Stainless", "Weathering (A588)", "Aluminium"]},
-                {"key": "weld_inches",        "label": "Total weld length (in)",          "type": "number", "default": 4200, "min": 0},
-                {"key": "cut_meters",         "label": "Total cut length (m)",            "type": "number", "default": 2200, "min": 0},
-                {"key": "surface_treatment",  "label": "Surface treatment",               "type": "select", "default": "SSPC-SP6 + 2-coat",
-                 "options": ["Shop primer only", "SSPC-SP6 + 2-coat", "SSPC-SP10 + 3-coat", "Hot-dip galvanised", "Intumescent fire-rated"]},
-                {"key": "assembly_complexity", "label": "Assembly complexity",            "type": "select", "default": "Mixed bolt/weld",
-                 "options": ["Simple bolted", "Mixed bolt/weld", "Heavy welded", "Architectural AESS", "Custom curved"]},
-            ],
-            "kpis": ["tonnage", "rate_band", "final_amount"],
+    if role == "fabricator":
+        return {
+            "role": role,
+            "schema": {
+                "title": "Fabrication estimate",
+                "subtitle": "Upload your drawings — STRUCTMIND CORE extracts the tonnage and applies your per-ton rate band.",
+                "rate_unit": "/ ton",
+                "rate_label_low":  "Your per-ton cost — LOW",
+                "rate_label_high": "Your per-ton cost — HIGH",
+                "rate_help_low":   "Lower bound of your shop's per-ton cost band (local currency).",
+                "rate_help_high":  "Upper bound of your shop's per-ton cost band (local currency).",
+                "default_low":  2400,
+                "default_high": 3600,
+            },
+        }
+    return {
+        "role": role,
+        "schema": {
+            "title": "Detailing estimate",
+            "subtitle": "Upload your drawings — STRUCTMIND CORE extracts the drawing count + complexity and applies your per-drawing rate band.",
+            "rate_unit": "/ drawing",
+            "rate_label_low":  "Your per-drawing fee — LOW",
+            "rate_label_high": "Your per-drawing fee — HIGH",
+            "rate_help_low":   "Lower bound of your studio's per-drawing fee (local currency).",
+            "rate_help_high":  "Upper bound of your studio's per-drawing fee (local currency).",
+            "default_low":  120,
+            "default_high": 220,
         },
     }
-    return {"role": role, "schema": schemas[role]}
 
 
-# ─── CALCULATE ──────────────────────────────────────────────────────────
+# ─── AI-DRIVEN CALCULATE (PRIMARY) ──────────────────────────────────────
+@router.post("/ai-calculate")
+async def ai_calculate(
+    payload: dict,
+    request: Request,
+    user=Depends(get_current_user),
+    perms: dict = Depends(load_permissions),
+):
+    block_write_if_readonly(user)
+    db = get_db()
+
+    role = (payload.get("role") or user["role"]).lower()
+    if role not in ("detailer", "fabricator"):
+        raise HTTPException(status_code=400, detail="Estimation supports only 'detailer' or 'fabricator'.")
+    if user["role"] != "super_admin" and role != user["role"]:
+        raise HTTPException(status_code=403, detail="You may only run your own role's estimate.")
+
+    try:
+        rate_low  = float(payload.get("rate_low", 0))
+        rate_high = float(payload.get("rate_high", 0))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="rate_low and rate_high must be numbers.")
+    if rate_low <= 0 or rate_high <= 0:
+        raise HTTPException(status_code=422, detail="Both LOW and HIGH rates must be greater than 0.")
+
+    file_ids: list[str] = payload.get("file_ids") or []
+    if not file_ids:
+        raise HTTPException(status_code=422, detail="Upload at least one drawing before calculating.")
+
+    country = payload.get("country") or (user.get("country") or "USA")
+    project_name = payload.get("project_name") or ""
+
+    if user["role"] != "super_admin":
+        check_feature(perms, "canRunEstimation")
+        check_country(perms, country)
+        max_files = perms.get("maxFilesPerAnalysis", 3)
+        if len(file_ids) > max_files:
+            raise HTTPException(status_code=413, detail=f"Too many files. Cap is {max_files}.")
+
+    # Load files belonging to the user (or any file for super_admin) and prep for LLM
+    file_query = {"id": {"$in": file_ids}}
+    if user["role"] != "super_admin":
+        file_query["uploaded_by"] = user["id"]
+    file_docs = await db.files.find(file_query).to_list(50)
+    if not file_docs:
+        raise HTTPException(status_code=404, detail="None of the uploaded files were found.")
+
+    file_pairs: list[tuple[str, str]] = []
+    for f in file_docs:
+        path = Path(settings.upload_dir) / f["storage_key"]
+        if path.exists() and f.get("mime_type") in {
+            "application/pdf", "text/plain", "text/csv",
+            "image/png", "image/jpeg", "image/webp",
+        }:
+            file_pairs.append((str(path), f["mime_type"]))
+
+    if not file_pairs:
+        raise HTTPException(
+            status_code=415,
+            detail="Uploaded files are not in a supported format for AI analysis. Supported: PDF, PNG, JPG, WEBP, TXT, CSV.",
+        )
+
+    # Run AI extraction
+    now = datetime.now(timezone.utc).isoformat()
+    session_id = sha256_hex(f"est-ai:{user['id']}:{role}:{now}")[:24]
+    try:
+        extracted, engine = await extract_quantities(
+            role=role, session_id=session_id, file_paths=file_pairs,
+        )
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"AI extraction failed: {e}")
+
+    # Apply rate band
+    try:
+        result = apply_band_to_extracted(
+            role=role,
+            extracted=extracted,
+            rate_low=rate_low,
+            rate_high=rate_high,
+            country_code=country,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    # Auto-derive a project name from the first file if user didn't provide one
+    if not project_name and file_docs:
+        first = file_docs[0].get("original_name") or "Estimate"
+        project_name = f"AI · {first[:60]}"
+
+    record = {
+        "id": sha256_hex(f"est-ai:{user['id']}:{session_id}")[:24],
+        "user_id": user["id"],
+        "role": role,
+        "country": country,
+        "project_name": project_name,
+        "file_ids": [f["id"] for f in file_docs],
+        "inputs": {
+            "rate_low":  rate_low,
+            "rate_high": rate_high,
+            "ai_extracted": extracted,
+        },
+        "result": result,
+        "engine": engine,
+        "created_at": now,
+    }
+    await db.estimates.insert_one(record)
+    await audit_log(
+        user["id"], "estimation.ai_calculate", "estimate", record["id"], request,
+        extra={"role": role, "country": country, "files": len(file_pairs)},
+    )
+    record.pop("_id", None)
+    return record
+
+
+# ─── DETERMINISTIC CALCULATE (KEPT FOR API / POWER USERS) ────────────────
 @router.post("/calculate")
 async def post_calculate(
     payload: dict,
@@ -98,11 +211,9 @@ async def post_calculate(
     project  = payload.get("project_name") or "Quick Estimate"
 
     if role not in CALCULATORS or role == "super_admin":
-        # super_admin selects an explicit role to run; we still require detailer/fabricator here
         if role not in ("detailer", "fabricator"):
             raise HTTPException(status_code=400, detail="Estimation supports only 'detailer' or 'fabricator'.")
 
-    # Non-super-admin can only run their own role
     if user["role"] != "super_admin" and role != user["role"]:
         raise HTTPException(status_code=403, detail="You may only run your own role's estimate.")
 
@@ -110,7 +221,6 @@ async def post_calculate(
         check_feature(perms, "canRunEstimation")
         check_country(perms, country)
 
-    # Validate fabricator-specific required inputs at API boundary
     if role == "fabricator":
         try:
             low  = float(inputs.get("cost_per_ton_low", 0))
@@ -179,10 +289,13 @@ async def download_pdf(
     if user["role"] != "super_admin":
         check_feature(perms, "canDownloadReports")
 
-    try:
-        full_result = calculate(e["role"], e["inputs"], e["country"])
-    except ValueError as ex:
-        raise HTTPException(status_code=422, detail=str(ex))
+    # AI-driven records already store the full result; deterministic ones recompute.
+    full_result = e.get("result")
+    if not full_result or "visible" not in full_result:
+        try:
+            full_result = calculate(e["role"], e["inputs"], e["country"])
+        except ValueError as ex:
+            raise HTTPException(status_code=422, detail=str(ex))
 
     path = render_pdf(full_result, e.get("project_name", "Project"), filename=f"{eid}.pdf")
     if not Path(path).exists():

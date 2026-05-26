@@ -1,5 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
-import { Calculator, Download, History, Plus, Sparkles, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { useDropzone } from "react-dropzone";
+import {
+    Calculator,
+    CheckCircle2,
+    CloudUpload,
+    Download,
+    FileIcon,
+    History,
+    Sparkles,
+    Trash2,
+} from "lucide-react";
 import { motion } from "framer-motion";
 import { api, errMessage } from "@/lib/api";
 import { toast } from "sonner";
@@ -19,29 +29,17 @@ import { tokenStore } from "@/lib/auth";
 export default function Estimation() {
     const { user } = useAuth();
     const { perms, isSuperAdmin, can } = usePermissions();
-    const [role, setRole] = useState(user?.role === "super_admin" ? "detailer" : user?.role || "detailer");
-    const [country, setCountry] = useState("USA");
-    const [countries, setCountries] = useState([]);
+    const [role, setRole] = useState(
+        user?.role === "super_admin" ? "detailer" : user?.role || "detailer",
+    );
     const [schema, setSchema] = useState(null);
-    const [inputs, setInputs] = useState({});
-    const [projectName, setProjectName] = useState("Quick Estimate");
+    const [rateLow, setRateLow] = useState(0);
+    const [rateHigh, setRateHigh] = useState(0);
+    const [files, setFiles] = useState([]);
+    const [uploading, setUploading] = useState(false);
     const [running, setRunning] = useState(false);
     const [result, setResult] = useState(null);
     const [history, setHistory] = useState([]);
-
-    useEffect(() => {
-        (async () => {
-            try {
-                const { data } = await api.get("/api/estimation/countries");
-                setCountries(data.countries || []);
-                if (data.countries?.length && !data.countries.find((c) => c.code === country)) {
-                    setCountry(data.countries[0].code);
-                }
-            } catch (e) {
-                toast.error(errMessage(e));
-            }
-        })();
-    }, []);
 
     useEffect(() => {
         if (!role) return;
@@ -49,14 +47,16 @@ export default function Estimation() {
             try {
                 const { data } = await api.get(`/api/estimation/schema/${role}`);
                 setSchema(data.schema);
-                const initial = {};
-                for (const f of data.schema.fields) initial[f.key] = f.default;
-                setInputs(initial);
+                setRateLow(data.schema.default_low);
+                setRateHigh(data.schema.default_high);
             } catch (e) {
                 toast.error(errMessage(e));
                 setSchema(null);
             }
         })();
+        // Clear AI result + files when switching roles (rates are role-specific)
+        setResult(null);
+        setFiles([]);
     }, [role]);
 
     const loadHistory = async () => {
@@ -72,20 +72,70 @@ export default function Estimation() {
 
     const cannotRun = !isSuperAdmin && !can("canRunEstimation");
 
-    const set = (k, v) => setInputs((p) => ({ ...p, [k]: v }));
+    const onDrop = useCallback(
+        async (accepted) => {
+            if (!accepted.length) return;
+            setUploading(true);
+            for (const f of accepted) {
+                const fd = new FormData();
+                fd.append("file", f);
+                try {
+                    const { data } = await api.post("/api/files/upload", fd, {
+                        headers: { "Content-Type": "multipart/form-data" },
+                    });
+                    setFiles((prev) => [data, ...prev]);
+                } catch (e) {
+                    toast.error(`${f.name} — ${errMessage(e)}`);
+                }
+            }
+            setUploading(false);
+        },
+        [],
+    );
 
-    const submit = async () => {
+    const { getRootProps, getInputProps, isDragActive } = useDropzone({
+        onDrop,
+        multiple: true,
+        accept: {
+            "application/pdf": [".pdf"],
+            "image/png": [".png"],
+            "image/jpeg": [".jpg", ".jpeg"],
+            "image/webp": [".webp"],
+            "text/csv": [".csv"],
+            "text/plain": [".txt"],
+        },
+        maxSize: 200 * 1024 * 1024,
+    });
+
+    const removeFile = async (fid) => {
+        try {
+            await api.delete(`/api/files/${fid}`);
+            setFiles((prev) => prev.filter((f) => f.id !== fid));
+        } catch (e) {
+            toast.error(errMessage(e));
+        }
+    };
+
+    const runAi = async () => {
+        if (!files.length) {
+            toast.error("Upload at least one drawing first.");
+            return;
+        }
+        if (rateLow <= 0 || rateHigh <= 0) {
+            toast.error("Set both LOW and HIGH rates (> 0).");
+            return;
+        }
         setRunning(true);
         setResult(null);
         try {
-            const { data } = await api.post("/api/estimation/calculate", {
+            const { data } = await api.post("/api/estimation/ai-calculate", {
                 role,
-                country,
-                project_name: projectName,
-                inputs,
+                rate_low: rateLow,
+                rate_high: rateHigh,
+                file_ids: files.map((f) => f.id),
             });
             setResult(data);
-            toast.success("Estimate calculated.");
+            toast.success("AI estimate ready.");
             loadHistory();
         } catch (e) {
             toast.error(errMessage(e));
@@ -121,24 +171,24 @@ export default function Estimation() {
         }
     };
 
-    const visibleResult = useMemo(() => result?.result?.visible, [result]);
+    const v = result?.result?.visible;
+    const ai = v?.ai_extracted;
 
     return (
         <div className="min-h-full bg-background">
             <div className="border-b border-ink-line bg-white px-10 py-10">
                 <div className="text-overline">Estimation</div>
                 <h1 className="mt-2 font-heading text-5xl font-black leading-none tracking-tight text-navy">
-                    Cost estimation
+                    Drawing-driven cost estimate
                 </h1>
                 <p className="mt-3 max-w-3xl text-ink-muted">
-                    Deterministic role-specific estimates. Fabricators bid against their own per-ton
-                    cost band; the engine returns a low → high range so commercial reviewers see the
-                    full risk envelope.
+                    Upload your structural drawings, set your per-{role === "fabricator" ? "ton" : "drawing"} rate
+                    band, and STRUCTMIND CORE returns a low → high cost range based on what it measures in your files.
                 </p>
             </div>
 
             <div className="container-steel grid gap-8 py-10 lg:grid-cols-5">
-                {/* LEFT — Form */}
+                {/* LEFT — Inputs */}
                 <section className="card-steel p-6 lg:col-span-3">
                     <div className="flex items-center justify-between">
                         <div className="font-heading text-xl font-bold uppercase tracking-tight text-navy">
@@ -181,111 +231,121 @@ export default function Estimation() {
                         <Skeleton className="mt-6 h-64 rounded-none" />
                     ) : (
                         <>
-                            <div className="mt-1 text-sm text-ink-muted">{schema.subtitle}</div>
+                            <div className="mt-2 text-sm text-ink-muted">{schema.subtitle}</div>
 
-                            <div className="mt-6 grid gap-4 md:grid-cols-2">
-                                <div>
-                                    <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.2em] text-ink-muted">
-                                        Project name
-                                    </label>
-                                    <Input
-                                        data-testid="est-project-name"
-                                        value={projectName}
-                                        onChange={(e) => setProjectName(e.target.value)}
-                                        className="h-10 rounded-none border-ink-line focus-visible:border-gold focus-visible:ring-0"
-                                    />
+                            {/* Upload zone */}
+                            <div
+                                {...getRootProps()}
+                                data-testid="est-dropzone"
+                                className={`mt-6 cursor-pointer border-2 border-dashed p-8 text-center transition-colors ${
+                                    isDragActive
+                                        ? "border-gold bg-gold-pale"
+                                        : "border-ink-line bg-background hover:border-navy hover:bg-gold-pale/40"
+                                }`}
+                            >
+                                <input {...getInputProps()} data-testid="est-file-input" />
+                                <CloudUpload size={40} className="mx-auto text-navy" strokeWidth={1.25} />
+                                <div className="mt-3 font-heading text-lg font-black uppercase tracking-tight text-navy">
+                                    Drop drawings here
                                 </div>
-                                <div>
-                                    <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.2em] text-ink-muted">
-                                        Country
-                                    </label>
-                                    <Select value={country} onValueChange={setCountry}>
-                                        <SelectTrigger
-                                            data-testid="est-country-select"
-                                            className="h-10 rounded-none border-ink-line font-mono text-[11px] uppercase"
-                                        >
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent className="rounded-none">
-                                            {countries.map((c) => (
-                                                <SelectItem
-                                                    key={c.code}
-                                                    value={c.code}
-                                                    className="rounded-none font-mono text-[11px] uppercase"
-                                                >
-                                                    {c.code} ({c.currency})
-                                                </SelectItem>
-                                            ))}
-                                            {!countries.length && (
-                                                <SelectItem
-                                                    value="__none__"
-                                                    disabled
-                                                    className="rounded-none font-mono text-[11px] uppercase"
-                                                >
-                                                    No countries enabled
-                                                </SelectItem>
-                                            )}
-                                        </SelectContent>
-                                    </Select>
+                                <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
+                                    PDF · PNG · JPG · WEBP · CSV · TXT · Multi-file OK
                                 </div>
+                            </div>
 
-                                {schema.fields.map((f) => (
-                                    <div key={f.key} className={f.key.startsWith("cost_per_ton") ? "border border-gold bg-gold-pale/60 p-3" : ""}>
-                                        <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.2em] text-ink-muted">
-                                            {f.label} {f.required && <span className="text-destructive">*</span>}
-                                        </label>
-                                        {f.type === "select" ? (
-                                            <Select
-                                                value={String(inputs[f.key] ?? f.default)}
-                                                onValueChange={(v) => set(f.key, v)}
-                                            >
-                                                <SelectTrigger
-                                                    data-testid={`est-field-${f.key}`}
-                                                    className="h-10 rounded-none border-ink-line font-mono text-[11px] uppercase"
-                                                >
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent className="rounded-none">
-                                                    {f.options.map((o) => (
-                                                        <SelectItem
-                                                            key={o}
-                                                            value={o}
-                                                            className="rounded-none font-mono text-[11px] uppercase"
-                                                        >
-                                                            {o}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        ) : (
-                                            <Input
-                                                data-testid={`est-field-${f.key}`}
-                                                type="number"
-                                                value={inputs[f.key] ?? f.default}
-                                                onChange={(e) => set(f.key, parseFloat(e.target.value || "0"))}
-                                                min={f.min}
-                                                max={f.max}
-                                                className="h-10 rounded-none border-ink-line font-mono text-sm focus-visible:border-gold focus-visible:ring-0"
-                                            />
-                                        )}
-                                        {f.help && (
-                                            <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
-                                                {f.help}
+                            {/* File list */}
+                            <div className="mt-3 space-y-2">
+                                {uploading && (
+                                    <div className="flex items-center gap-2 border border-gold bg-gold-pale px-3 py-2 font-mono text-xs uppercase tracking-wider text-navy">
+                                        <span className="h-2 w-2 animate-pulse-ring rounded-full bg-gold" />
+                                        Uploading…
+                                    </div>
+                                )}
+                                {files.map((f) => (
+                                    <div
+                                        key={f.id}
+                                        data-testid={`est-file-${f.id}`}
+                                        className="flex items-center justify-between border border-ink-line bg-white px-3 py-2"
+                                    >
+                                        <div className="flex min-w-0 items-center gap-2">
+                                            <FileIcon size={14} className="text-navy" />
+                                            <div className="min-w-0">
+                                                <div className="truncate font-heading text-sm font-semibold uppercase text-navy">
+                                                    {f.original_name}
+                                                </div>
+                                                <div className="font-mono text-[10px] uppercase tracking-wider text-ink-muted">
+                                                    {f.size_mb} MB
+                                                </div>
                                             </div>
-                                        )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="inline-flex items-center gap-1 border border-success px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-success">
+                                                <CheckCircle2 size={10} />
+                                                Ready
+                                            </span>
+                                            <button
+                                                onClick={() => removeFile(f.id)}
+                                                data-testid={`est-remove-${f.id}`}
+                                                className="text-ink-muted hover:text-destructive"
+                                                aria-label="Remove"
+                                            >
+                                                <Trash2 size={13} />
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
 
+                            {/* LOW / HIGH rates (the only two manual inputs) */}
+                            <div className="mt-6 grid gap-4 md:grid-cols-2">
+                                <div className="border border-gold bg-gold-pale/60 p-3">
+                                    <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.2em] text-ink-muted">
+                                        {schema.rate_label_low} <span className="text-destructive">*</span>
+                                    </label>
+                                    <Input
+                                        data-testid="est-rate-low"
+                                        type="number"
+                                        value={rateLow}
+                                        onChange={(e) => setRateLow(parseFloat(e.target.value || "0"))}
+                                        min={1}
+                                        className="h-11 rounded-none border-ink-line font-mono text-base focus-visible:border-gold focus-visible:ring-0"
+                                    />
+                                    <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
+                                        {schema.rate_help_low}
+                                    </div>
+                                </div>
+                                <div className="border border-gold bg-gold-pale/60 p-3">
+                                    <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.2em] text-ink-muted">
+                                        {schema.rate_label_high} <span className="text-destructive">*</span>
+                                    </label>
+                                    <Input
+                                        data-testid="est-rate-high"
+                                        type="number"
+                                        value={rateHigh}
+                                        onChange={(e) => setRateHigh(parseFloat(e.target.value || "0"))}
+                                        min={1}
+                                        className="h-11 rounded-none border-ink-line font-mono text-base focus-visible:border-gold focus-visible:ring-0"
+                                    />
+                                    <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
+                                        {schema.rate_help_high}
+                                    </div>
+                                </div>
+                            </div>
+
                             <button
-                                onClick={submit}
-                                disabled={running}
+                                onClick={runAi}
+                                disabled={running || uploading || !files.length}
                                 data-testid="est-calculate-btn"
                                 className="btn-gold mt-6 w-full"
                             >
                                 <Sparkles size={14} />
-                                {running ? "Calculating…" : "Calculate estimate"}
+                                {running ? "STRUCTMIND CORE is analysing your drawings…" : "Analyse drawings & calculate"}
                             </button>
+                            {!files.length && (
+                                <div className="mt-2 text-center font-mono text-[10px] uppercase tracking-wider text-ink-muted">
+                                    Upload at least one drawing to enable the calculate button.
+                                </div>
+                            )}
                         </>
                     )}
                 </section>
@@ -295,9 +355,10 @@ export default function Estimation() {
                     <div className="font-heading text-xl font-bold uppercase tracking-tight text-navy">
                         02 · Result
                     </div>
-                    {!visibleResult ? (
+                    {!v ? (
                         <div className="mt-6 border border-dashed border-ink-line bg-background p-6 text-center text-sm text-ink-muted">
-                            Run a calculation to see the breakdown here.
+                            Upload a drawing + set your rate band, then hit Analyse.
+                            STRUCTMIND CORE will extract quantities and apply your band.
                         </div>
                     ) : (
                         <motion.div
@@ -309,57 +370,59 @@ export default function Estimation() {
                         >
                             <div className="border border-gold bg-gold-pale p-4">
                                 <div className="font-mono text-[10px] uppercase tracking-wider text-ink-muted">
-                                    Final amount
+                                    Final range
                                 </div>
-                                <div className="font-heading text-3xl font-black uppercase tracking-tight text-navy">
-                                    {visibleResult.final_amount}
+                                <div className="font-heading text-2xl font-black uppercase tracking-tight text-navy">
+                                    {v.grand_range_text}
                                 </div>
-                                {visibleResult.grand_range_text && (
-                                    <div className="mt-1 font-mono text-[11px] uppercase tracking-wider text-ink">
-                                        Range: {visibleResult.grand_range_text}
-                                    </div>
-                                )}
+                                <div className="mt-1 font-mono text-[11px] uppercase tracking-wider text-ink">
+                                    Midpoint headline: <span className="text-navy">{v.final_amount}</span>
+                                </div>
                             </div>
 
-                            {role === "fabricator" && visibleResult.process_breakdown && (
-                                <div>
-                                    <div className="mb-2 text-overline">Process split (mid)</div>
-                                    <table className="w-full text-left text-sm">
-                                        <tbody>
-                                            {visibleResult.process_breakdown.map((p) => (
-                                                <tr
-                                                    key={p.process}
-                                                    className="border-b border-ink-line last:border-b-0"
-                                                >
-                                                    <td className="py-2 font-mono text-[11px] uppercase tracking-wider text-ink-muted">
-                                                        {p.process}
-                                                    </td>
-                                                    <td className="py-2 text-right font-mono text-xs text-ink-muted">
-                                                        {p.share}
-                                                    </td>
-                                                    <td className="py-2 text-right font-heading text-sm font-semibold text-navy">
-                                                        {p.amount}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                            <div>
+                                <div className="text-overline">AI extracted (STRUCTMIND CORE)</div>
+                                <div className="mt-2 grid grid-cols-2 gap-2">
+                                    {role === "fabricator" ? (
+                                        <>
+                                            <KV label="Tonnage"        value={`${ai?.tonnage ?? "—"} t`} testId="ai-tonnage" />
+                                            <KV label="Members"        value={ai?.members_counted ?? "—"} />
+                                            <KV label="Material"       value={ai?.primary_material || "—"} />
+                                            <KV label="Drawings"       value={ai?.drawings_seen ?? "—"} />
+                                        </>
+                                    ) : (
+                                        <>
+                                            <KV label="Drawings"       value={ai?.drawings ?? "—"} testId="ai-drawings" />
+                                            <KV label="Connections"    value={ai?.connections ?? "—"} />
+                                            <KV label="Complexity"     value={ai?.complexity || "—"} />
+                                            <KV label="Multiplier"     value={ai?.complexity_multiplier ? `×${ai.complexity_multiplier}` : "—"} />
+                                        </>
+                                    )}
                                 </div>
-                            )}
+                                <div className="mt-2 border border-ink-line bg-background p-2 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
+                                    Confidence: {ai?.confidence?.toUpperCase() || "—"} · {ai?.notes}
+                                </div>
+                            </div>
 
-                            {role === "detailer" && (
-                                <div className="space-y-2 text-sm">
-                                    <div className="font-mono text-[10px] uppercase tracking-wider text-ink-muted">
-                                        Total hours
-                                    </div>
-                                    <div className="font-heading text-lg font-bold text-navy">
-                                        {visibleResult.total_hours} hrs · {visibleResult.timeline_weeks} weeks
-                                    </div>
-                                    <div className="font-mono text-[10px] uppercase tracking-wider text-ink-muted">
-                                        {visibleResult.scope_summary}
-                                    </div>
-                                </div>
-                            )}
+                            <div>
+                                <div className="text-overline">Range</div>
+                                <table className="mt-2 w-full text-left text-sm">
+                                    <tbody>
+                                        <tr className="border-b border-ink-line">
+                                            <td className="py-2 font-mono text-[11px] uppercase tracking-wider text-ink-muted">Low</td>
+                                            <td className="py-2 text-right font-heading font-semibold text-navy">{v.grand_low}</td>
+                                        </tr>
+                                        <tr className="border-b border-ink-line bg-gold-pale">
+                                            <td className="py-2 font-mono text-[11px] uppercase tracking-wider text-navy">Mid</td>
+                                            <td className="py-2 text-right font-heading font-bold text-navy">{v.grand_mid}</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="py-2 font-mono text-[11px] uppercase tracking-wider text-ink-muted">High</td>
+                                            <td className="py-2 text-right font-heading font-semibold text-navy">{v.grand_high}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
 
                             <button
                                 onClick={() => downloadPdf(result.id)}
@@ -453,6 +516,17 @@ export default function Estimation() {
                     )}
                 </div>
             </div>
+        </div>
+    );
+}
+
+function KV({ label, value, testId }) {
+    return (
+        <div className="border border-ink-line bg-white p-2" data-testid={testId}>
+            <div className="font-mono text-[9px] uppercase tracking-wider text-ink-muted">
+                {label}
+            </div>
+            <div className="mt-0.5 font-heading text-sm font-bold uppercase text-navy">{value}</div>
         </div>
     );
 }

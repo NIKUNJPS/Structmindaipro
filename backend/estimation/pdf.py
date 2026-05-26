@@ -133,11 +133,67 @@ def _kpi_strip(st, kpis):
 # ─── DETAILER ─────────────────────────────────────────
 def _render_detailer(result: dict, project: str, st: dict) -> list:
     v = result["visible"]
+    is_ai = "ai_extracted" in v
     story = _header_block(st, "DETAILER", result["country"])
     story += [
         Paragraph("DETAILING ESTIMATE", st["title"]),
         Paragraph(f"Project: {project} · Country: {result['country']} · Currency: {result['currency']}", st["subtitle"]),
+    ]
 
+    if is_ai:
+        ai = v["ai_extracted"]
+        story += [
+            _kpi_strip(st, [
+                ("AI DRAWINGS",   f"{ai['drawings']:,}"),
+                ("RATE BAND",     f"{v['user_rate_low']}  →  {v['user_rate_high']} / dwg"),
+                ("FINAL (MID)",   v["grand_mid"]),
+            ]),
+            Spacer(1, 0.25 * inch),
+
+            Paragraph("AI-EXTRACTED QUANTITIES (STRUCTMIND CORE)", st["h2"]),
+            _table(
+                [["Metric", "Value"]] +
+                [["Production drawings detected", f"{ai['drawings']:,}"],
+                 ["Connections detected",         f"{ai['connections']:,}"],
+                 ["Complexity",                   ai["complexity"]],
+                 ["Complexity multiplier",        f"×{ai['complexity_multiplier']:.2f}"],
+                 ["Drawings analysed",            f"{ai['drawings_seen']:,}"],
+                 ["Confidence",                   ai["confidence"].upper()]],
+                st, col_widths=[3.6 * inch, 3.6 * inch],
+            ),
+            Spacer(1, 0.1 * inch),
+            Paragraph(f"AI note: {ai.get('notes','—')}", st["meta"]),
+            Spacer(1, 0.2 * inch),
+
+            Paragraph("RATE BAND × COMPLEXITY", st["h2"]),
+            _table(
+                [["Input", "Low", "High"]] +
+                [["Per-drawing fee (user)",   v["user_rate_low"],      v["user_rate_high"]],
+                 [f"Effective fee × {ai['complexity_multiplier']:.2f}",
+                                              v["effective_rate_low"], v["effective_rate_high"]]],
+                st, col_widths=[3.8 * inch, 1.4 * inch, 1.4 * inch],
+            ),
+            Spacer(1, 0.2 * inch),
+
+            Paragraph("ESTIMATE RANGE (LOW · MID · HIGH)", st["h2"]),
+            _table(
+                [["Line", "Low", "Mid", "High"]] +
+                [["GRAND TOTAL", v["grand_low"], v["grand_mid"], v["grand_high"]]],
+                st, col_widths=[2.6 * inch, 1.4 * inch, 1.4 * inch, 1.4 * inch], highlight_last=True,
+            ),
+            Spacer(1, 0.25 * inch),
+
+            Paragraph("FINAL DETAILING RANGE", st["h2"]),
+            Paragraph(v["grand_range_text"], st["moneyBig"]),
+            Paragraph(
+                f"Mid-point headline: {v['final_amount']} · Drawings × your per-drawing band × AI complexity factor.",
+                st["meta"],
+            ),
+        ]
+        return story
+
+    # Deterministic (legacy /calculate path)
+    story += [
         _kpi_strip(st, [
             ("TOTAL HOURS", f"{v['total_hours']:,.0f}"),
             ("TIMELINE",    f"{v['timeline_weeks']:.0f} weeks"),
@@ -174,11 +230,66 @@ def _render_detailer(result: dict, project: str, st: dict) -> list:
 # ─── FABRICATOR (range-based) ─────────────────────────
 def _render_fabricator(result: dict, project: str, st: dict) -> list:
     v = result["visible"]
+    is_ai = "ai_extracted" in v
     story = _header_block(st, "FABRICATOR", result["country"])
     story += [
         Paragraph("FABRICATION ESTIMATE", st["title"]),
         Paragraph(f"Project: {project} · Country: {result['country']} · Currency: {result['currency']}", st["subtitle"]),
+    ]
 
+    if is_ai:
+        ai = v["ai_extracted"]
+        story += [
+            _kpi_strip(st, [
+                ("AI TONNAGE",  f"{ai['tonnage']:,.1f} t"),
+                ("RATE BAND",   f"{v['user_rate_low']}  →  {v['user_rate_high']} / ton"),
+                ("FINAL (MID)", v["grand_mid"]),
+            ]),
+            Spacer(1, 0.25 * inch),
+
+            Paragraph("AI-EXTRACTED QUANTITIES (STRUCTMIND CORE)", st["h2"]),
+            _table(
+                [["Metric", "Value"]] +
+                [["Total fabricated tonnage", f"{ai['tonnage']:,.2f} t"],
+                 ["Distinct members counted", f"{ai['members_counted']:,}"],
+                 ["Primary material",         ai.get("primary_material", "—")],
+                 ["Drawings analysed",        f"{ai['drawings_seen']:,}"],
+                 ["Confidence",               ai["confidence"].upper()]],
+                st, col_widths=[3.6 * inch, 3.6 * inch],
+            ),
+            Spacer(1, 0.1 * inch),
+            Paragraph(f"AI note: {ai.get('notes','—')}", st["meta"]),
+            Spacer(1, 0.2 * inch),
+
+            Paragraph("USER-PROVIDED RATE BAND", st["h2"]),
+            _table(
+                [["Input", "Low", "High"]] +
+                [["Per-ton cost (user)", v["user_rate_low"], v["user_rate_high"]]],
+                st, col_widths=[3.8 * inch, 1.4 * inch, 1.4 * inch],
+            ),
+            Spacer(1, 0.2 * inch),
+
+            Paragraph("ESTIMATE RANGE (LOW · MID · HIGH)", st["h2"]),
+            _table(
+                [["Line", "Low", "Mid", "High"]] +
+                [["Subtotal", v["subtotal_low"], v["subtotal_mid"], v["subtotal_high"]],
+                 [v["tax_label"], v["tax_low"], v["tax_mid"], v["tax_high"]],
+                 ["GRAND TOTAL", v["grand_low"], v["grand_mid"], v["grand_high"]]],
+                st, col_widths=[2.6 * inch, 1.4 * inch, 1.4 * inch, 1.4 * inch], highlight_last=True,
+            ),
+            Spacer(1, 0.25 * inch),
+
+            Paragraph("FINAL FABRICATION RANGE", st["h2"]),
+            Paragraph(v["grand_range_text"], st["moneyBig"]),
+            Paragraph(
+                f"Mid-point headline: {v['final_amount']} · AI tonnage × your per-ton band · includes {result['country']} tax.",
+                st["meta"],
+            ),
+        ]
+        return story
+
+    # Deterministic (legacy /calculate path)
+    story += [
         _kpi_strip(st, [
             ("TONNAGE",      f"{v['tonnage']:,.1f} t"),
             ("RATE BAND",    f"{v['adjusted_rate_low']}  →  {v['adjusted_rate_high']} / ton"),

@@ -237,6 +237,145 @@ def calculate_fabricator(inputs: dict, country_code: str = "USA") -> dict:
 
 
 # ============================================================
+# AI-DRIVEN ESTIMATION (drawing-driven, only LOW/HIGH user inputs)
+# ============================================================
+def apply_band_to_extracted(
+    *,
+    role: str,
+    extracted: dict,
+    rate_low: float,
+    rate_high: float,
+    country_code: str = "USA",
+) -> dict:
+    """Apply user-supplied LOW/HIGH rate band to AI-extracted quantities.
+
+    Fabricator: rate is per metric ton.
+    Detailer:   rate is per production drawing.
+    """
+    c = country(country_code)
+    if rate_low <= 0 or rate_high <= 0:
+        raise ValueError("Both LOW and HIGH rates must be > 0.")
+    if rate_high < rate_low:
+        rate_low, rate_high = rate_high, rate_low
+
+    if role == "fabricator":
+        tonnage = float(extracted.get("tonnage", 0) or 0)
+        if tonnage <= 0:
+            raise ValueError("AI could not extract a usable tonnage from the drawings.")
+        subtotal_low  = tonnage * rate_low
+        subtotal_high = tonnage * rate_high
+        subtotal_mid  = (subtotal_low + subtotal_high) / 2.0
+        tax_low       = subtotal_low  * c["tax_pct"] / 100.0
+        tax_mid       = subtotal_mid  * c["tax_pct"] / 100.0
+        tax_high      = subtotal_high * c["tax_pct"] / 100.0
+        grand_low     = subtotal_low  + tax_low
+        grand_mid     = subtotal_mid  + tax_mid
+        grand_high    = subtotal_high + tax_high
+        sanity = sanity_check(role=role, total=subtotal_mid, tonnage=tonnage, currency=c["currency"])
+
+        return {
+            "role": role,
+            "country": country_code,
+            "currency": c["currency"],
+            "symbol":   c["symbol"],
+            "visible": {
+                "ai_extracted": {
+                    "tonnage":          _round(tonnage),
+                    "members_counted":  extracted.get("members_counted", 0),
+                    "primary_material": extracted.get("primary_material", ""),
+                    "drawings_seen":    extracted.get("drawings_seen", 0),
+                    "confidence":       extracted.get("confidence", "medium"),
+                    "notes":            extracted.get("notes", ""),
+                },
+                "user_rate_low":  _format_money(rate_low,  c),
+                "user_rate_high": _format_money(rate_high, c),
+                "subtotal_low":   _format_money(subtotal_low,  c),
+                "subtotal_mid":   _format_money(subtotal_mid,  c),
+                "subtotal_high":  _format_money(subtotal_high, c),
+                "tax_label":      f"Tax ({c['tax_pct']:.0f}%)",
+                "tax_low":  _format_money(tax_low,  c),
+                "tax_mid":  _format_money(tax_mid,  c),
+                "tax_high": _format_money(tax_high, c),
+                "grand_low":  _format_money(grand_low,  c),
+                "grand_mid":  _format_money(grand_mid,  c),
+                "grand_high": _format_money(grand_high, c),
+                "grand_range_text": f"{_format_money(grand_low, c)}  →  {_format_money(grand_high, c)}",
+                "final_amount":     _format_money(grand_mid, c),
+                "final_amount_raw": _round(grand_mid),
+            },
+            "breakdown": [
+                {"item": "Total fabricated tonnage (AI)", "qty": _round(tonnage), "unit": "t"},
+                {"item": "User per-ton low",              "qty": _format_money(rate_low,  c), "unit": "/ ton"},
+                {"item": "User per-ton high",             "qty": _format_money(rate_high, c), "unit": "/ ton"},
+            ],
+            "meta": {
+                "engine": "STRUCTMIND CORE",
+                "sanity": sanity,
+                "extracted_raw": extracted,
+            },
+        }
+
+    if role == "detailer":
+        drawings = int(extracted.get("drawings", 0) or 0)
+        if drawings <= 0:
+            raise ValueError("AI could not extract a usable drawing count.")
+        comp_mult = float(extracted.get("complexity_multiplier", 1.0) or 1.0)
+        # Apply complexity multiplier to the per-drawing rate
+        effective_low  = rate_low  * comp_mult
+        effective_high = rate_high * comp_mult
+        subtotal_low   = drawings * effective_low
+        subtotal_high  = drawings * effective_high
+        subtotal_mid   = (subtotal_low + subtotal_high) / 2.0
+        sanity = sanity_check(role=role, total=subtotal_mid, drawings=drawings, currency=c["currency"])
+
+        return {
+            "role": role,
+            "country": country_code,
+            "currency": c["currency"],
+            "symbol":   c["symbol"],
+            "visible": {
+                "ai_extracted": {
+                    "drawings":              drawings,
+                    "connections":           extracted.get("connections", 0),
+                    "complexity":            extracted.get("complexity", "Medium"),
+                    "complexity_multiplier": _round(comp_mult),
+                    "drawings_seen":         extracted.get("drawings_seen", 0),
+                    "confidence":            extracted.get("confidence", "medium"),
+                    "notes":                 extracted.get("notes", ""),
+                },
+                "user_rate_low":     _format_money(rate_low,  c),
+                "user_rate_high":    _format_money(rate_high, c),
+                "effective_rate_low":  _format_money(effective_low,  c),
+                "effective_rate_high": _format_money(effective_high, c),
+                "subtotal_low":   _format_money(subtotal_low,  c),
+                "subtotal_mid":   _format_money(subtotal_mid,  c),
+                "subtotal_high":  _format_money(subtotal_high, c),
+                "grand_low":   _format_money(subtotal_low,  c),
+                "grand_mid":   _format_money(subtotal_mid,  c),
+                "grand_high":  _format_money(subtotal_high, c),
+                "grand_range_text": f"{_format_money(subtotal_low, c)}  →  {_format_money(subtotal_high, c)}",
+                "final_amount":     _format_money(subtotal_mid, c),
+                "final_amount_raw": _round(subtotal_mid),
+            },
+            "breakdown": [
+                {"item": "Production drawings (AI)", "qty": drawings, "unit": "dwgs"},
+                {"item": "Connections (AI)",          "qty": extracted.get("connections", 0), "unit": "conn"},
+                {"item": "User per-drawing low",      "qty": _format_money(rate_low,  c), "unit": "/ dwg"},
+                {"item": "User per-drawing high",     "qty": _format_money(rate_high, c), "unit": "/ dwg"},
+                {"item": "Complexity",                "qty": extracted.get("complexity", "Medium"),
+                 "unit": "", "rate": f"×{comp_mult:.2f}"},
+            ],
+            "meta": {
+                "engine": "STRUCTMIND CORE",
+                "sanity": sanity,
+                "extracted_raw": extracted,
+            },
+        }
+
+    raise ValueError(f"AI estimation only supports detailer or fabricator (got '{role}').")
+
+
+# ============================================================
 # DISPATCHER (only detailer + fabricator + super_admin)
 # ============================================================
 CALCULATORS = {
