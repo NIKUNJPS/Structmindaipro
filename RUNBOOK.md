@@ -8,31 +8,21 @@
 
 These are the only manual inputs the platform expects from you:
 
-### ① Paste your AI prompts (CRITICAL — without these, the analyse mode list is empty)
-Open and paste your prompt content into these four files:
+### ① Paste your AI prompts (✅ **DONE** in v4.2.0 — 16 SteelSight modes already wired)
+The Detailer and Fabricator roles ship with the full 16-mode SteelSight catalog already integrated into `/app/backend/prompts/`:
 
-| File | What goes in it |
-|------|-----------------|
-| `/app/backend/prompts/shared_rules.py` | Global formatting + output conventions (markdown rules, citation style, severity tags). Already has a `GLOBAL_FORMAT_RULES` string — just edit it. |
-| `/app/backend/prompts/detailer_prompts.py` | Your 11 (or however many) Detailer modes. Each mode is a dict in the `DETAILER_MODES` list with keys: `id`, `label`, `group`, `description`, `time`, `system_prompt`. |
-| `/app/backend/prompts/fabricator_prompts.py` | Your Fabricator modes — same structure as above. |
-| `/app/backend/prompts/prompt_router.py` | Already wired — no edits needed unless you change the mode shape. |
+| File | Status |
+|------|--------|
+| `prompts/shared_rules.py` | ✅ 10 baseline output rules — edit if you change the global formatting policy |
+| `prompts/detailer_prompts.py` | ✅ All 16 SteelSight modes for Detailer (15 shared + `ESTIMATION_PRO` hours-based) |
+| `prompts/fabricator_prompts.py` | ✅ Imports the 15 shared modes + own `FABRICATOR_ESTIMATION_PRO` tonnage-based |
+| `prompts/prompt_router.py` | ✅ Wired — no edits needed |
 
-**Mode shape example** (copy-paste this template and fill in):
-```python
-{
-    "id": "PHASE_1_CONNECTION_AUDIT",
-    "label": "Phase 1 · Connection Audit",
-    "group": "Audit",
-    "description": "Detailed audit of all bolted/welded connections against AISC 360-22.",
-    "time": "8–12 min",
-    "system_prompt": '''You are STRUCTMIND CORE, a senior structural steel detailer...
-[paste your full prompt here, multi-line OK]
-''',
-},
-```
+The 15 shared modes are stored as module-level constants in `detailer_prompts.py` and imported into `fabricator_prompts.py`. **Editing a prompt updates both roles automatically.** Only the estimation mode differs (intentional).
 
-After pasting, restart backend: `sudo supervisorctl restart backend`. The Super Admin Permissions editor will instantly show your new modes for per-user toggling.
+**To tweak any prompt:** open the corresponding constant in `detailer_prompts.py` (e.g. `MASTER_INTAKE = """..."""`), edit, restart backend (`sudo supervisorctl restart backend`). Super Admin → Permissions editor will immediately reflect the change.
+
+**To add a brand-new mode:** add a new `NEW_MODE_NAME = """..."""` constant, then add an entry to the `DETAILER_MODES` dict (and the `FABRICATOR_MODES` dict if it should be shared). Restart backend.
 
 ---
 
