@@ -206,8 +206,8 @@ export default function Estimation() {
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent className="rounded-none">
-                                        <SelectItem className="rounded-none font-mono text-[11px] uppercase" value="detailer">Detailer</SelectItem>
-                                        <SelectItem className="rounded-none font-mono text-[11px] uppercase" value="fabricator">Fabricator</SelectItem>
+                                        <SelectItem data-testid="est-role-option-detailer" className="rounded-none font-mono text-[11px] uppercase" value="detailer">Detailer</SelectItem>
+                                        <SelectItem data-testid="est-role-option-fabricator" className="rounded-none font-mono text-[11px] uppercase" value="fabricator">Fabricator</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>

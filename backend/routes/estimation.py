@@ -115,7 +115,8 @@ async def ai_calculate(
     project_name = payload.get("project_name") or ""
 
     if user["role"] != "super_admin":
-        check_feature(perms, "canRunEstimation")
+        if not perms.get("canRunEstimation", False):
+            raise HTTPException(status_code=403, detail="Estimation is disabled for your account.")
         check_country(perms, country)
         max_files = perms.get("maxFilesPerAnalysis", 3)
         if len(file_ids) > max_files:
