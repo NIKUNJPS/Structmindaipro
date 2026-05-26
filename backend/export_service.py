@@ -214,10 +214,29 @@ def export_docx(content: str, meta: dict) -> str:
             if not rows:
                 continue
             tbl = doc.add_table(rows=len(rows), cols=len(rows[0]))
-            tbl.style = "Light Grid Accent 1"
-            for ri, r in enumerate(rows):
-                for ci, v in enumerate(r):
-                    tbl.cell(ri, ci).text = _strip_md(v)
+            # Manually style: high-contrast navy header + white text (visible)
+            from docx.oxml.ns import qn
+            from docx.oxml import OxmlElement
+            for ci in range(len(rows[0])):
+                cell = tbl.cell(0, ci)
+                shading = OxmlElement("w:shd")
+                shading.set(qn("w:val"), "clear")
+                shading.set(qn("w:color"), "auto")
+                shading.set(qn("w:fill"), "0D2240")
+                cell._tc.get_or_add_tcPr().append(shading)
+                cell.text = _strip_md(rows[0][ci])
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                        run.font.bold = True
+                        run.font.size = Pt(10)
+            for ri in range(1, len(rows)):
+                for ci in range(len(rows[ri])):
+                    tbl.cell(ri, ci).text = _strip_md(rows[ri][ci])
+                    for paragraph in tbl.cell(ri, ci).paragraphs:
+                        for run in paragraph.runs:
+                            run.font.size = Pt(10)
+                            run.font.color.rgb = RGBColor(0x1A, 0x2D, 0x44)
             doc.add_paragraph("")
         elif kind in ("li", "ol"):
             for it in text.splitlines():
@@ -306,12 +325,21 @@ def export_pdf(content: str, meta: dict) -> str:
             tbl.setStyle(
                 TableStyle(
                     [
-                        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
-                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                        ("FONTSIZE", (0, 0), (-1, -1), 9),
-                        ("GRID", (0, 0), (-1, -1), 0.4, LINE),
-                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        # High-contrast navy header + white text + proper padding
+                        ("BACKGROUND",     (0, 0), (-1, 0), NAVY),
+                        ("TEXTCOLOR",      (0, 0), (-1, 0), colors.white),
+                        ("FONTNAME",       (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE",       (0, 0), (-1, 0), 10),
+                        ("BOTTOMPADDING",  (0, 0), (-1, 0), 10),
+                        ("TOPPADDING",     (0, 0), (-1, 0), 10),
+                        ("LEFTPADDING",    (0, 0), (-1, -1), 9),
+                        ("RIGHTPADDING",   (0, 0), (-1, -1), 9),
+                        ("TOPPADDING",     (0, 1), (-1, -1), 7),
+                        ("BOTTOMPADDING",  (0, 1), (-1, -1), 7),
+                        ("FONTSIZE",       (0, 1), (-1, -1), 9.5),
+                        ("TEXTCOLOR",      (0, 1), (-1, -1), INK),
+                        ("GRID",           (0, 0), (-1, -1), 0.5, LINE),
+                        ("VALIGN",         (0, 0), (-1, -1), "TOP"),
                         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f9fc")]),
                     ]
                 )

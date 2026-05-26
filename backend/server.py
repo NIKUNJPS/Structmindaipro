@@ -10,6 +10,7 @@ from config import settings
 from db import ensure_indexes, get_client
 from routes.analyses import router as analyses_router
 from routes.auth import router as auth_router
+from routes.estimation import router as estimation_router
 from routes.files import router as files_router
 from routes.platform import router as platform_router
 from routes.projects import router as projects_router
@@ -42,6 +43,7 @@ app.include_router(projects_router)
 app.include_router(files_router)
 app.include_router(analyses_router)
 app.include_router(rfis_router)
+app.include_router(estimation_router)
 app.include_router(platform_router)
 
 
