@@ -1,0 +1,74 @@
+section,type,content
+p,p,---
+h2,h2,CALCULATION MANIFEST — Single Source of Truth
+table-row,row,Parameter | Value
+table-row,row,Piece-Count Subtotal Hrs (Low) | 0.0 hrs
+table-row,row,Piece-Count Subtotal Hrs (High) | 0.0 hrs
+table-row,row,Confidence Level | Low
+table-row,row,Risk Buffer % Applied | 30%
+table-row,row,Buffer Hrs Added (Low) | +0.0 hrs
+table-row,row,Buffer Hrs Added (High) | +0.0 hrs
+table-row,row,LOCK_HRS_LOW (Adjusted Total) | 0 hrs
+table-row,row,LOCK_HRS_HIGH (Adjusted Total) | 0 hrs
+table-row,row,Internal Rate | [CONFIDENTIAL]
+table-row,row,LOCK_COST_LOW | $0
+table-row,row,LOCK_COST_HIGH | $0
+p,p,> All four LOCK values above are fixed for this entire document. > Sections 1 and 7 must copy these values exactly — no re-derivation permitted. ---
+h2,h2,1. EXECUTIVE SUMMARY
+li,li,"Project Name / ID: Project Name Not Provided Total Estimated Hours: 0 – 0 hrs Total Estimated Cost (USD): $0 – $0 Confidence Level: Low No drawings or project documents were provided for review. All quantities, member sizes, and connection complexities are unknown. The entire basis of estimate could not be established. Critical Risks (top 3):"
+ol,ol,"Complete Lack of Scope: The entire project scope is undefined, making any estimate impossible. The potential hour impact is 100% of the future actual project hours. Missing Drawings: No structural, architectural, or other relevant drawings were provided. All information must be supplied to proceed. Missing Specifications: No project specifications for materials, connections, finishes, or special requirements were provided."
+h2,h2,2. BASIS OF ESTIMATE
+li,li,"Drawings Reviewed: No drawings were provided. A complete set of Issued for Construction (IFC) or equivalent structural and architectural drawings is required. Benchmarks Applied: AISC Manual, NISD standards, internal historical data. No benchmarks could be applied as no project scope was defined. Complexity Factor Basis: Not applicable. No members, connections, or geometry were identified from which to derive complexity. Global Assumptions: This is a placeholder estimate generated in response to a system test. All values are zero pending receipt of complete project documentation. An RFI for all project documents is implicitly raised."
+h2,h2,3. ITEMIZED PIECE-COUNT BREAKDOWN
+table-row,row,Item Type | Sub-Type | Qty | Base Hrs/Unit | Complexity Factors | Adj Hrs/Unit | Est Hrs (Low) | Est Hrs (High) | Source Sheet | Notes
+table-row,row,"N/A | No drawings provided | 0 | 0.00 | N/A (x1.00) | 0.00 | 0.0 | 0.0 | N/A | A complete set of drawings (structural, architectural) and project specifications are required to perform an estimate."
+table-row,row,**SUBTOTAL** |  | **0** |  |  |  | **0.0** | **0.0** |  | 
+h2,h2,4. HOURS BY TASK CATEGORY
+table-row,row,Task Category | Est Hrs (Low) | Est Hrs (High) | % of Total | Notes
+table-row,row,Modeling | 0.0 | 0.0 | 25% | Placeholder distribution.
+table-row,row,Shop Drawings / Editing | 0.0 | 0.0 | 40% | Placeholder distribution.
+table-row,row,Checking | 0.0 | 0.0 | 15% | Placeholder distribution.
+table-row,row,Erection Drawings | 0.0 | 0.0 | 5% | Placeholder distribution.
+table-row,row,RFIs / Revisions | 0.0 | 0.0 | 5% | Placeholder distribution.
+table-row,row,PM / Coordination | 0.0 | 0.0 | 10% | Placeholder distribution.
+table-row,row,**SUBTOTAL** | **0.0** | **0.0** | **100%** | **Matches Section 3 Subtotal.**
+h2,h2,5. CONFIDENCE ASSESSMENT
+p,p,Confidence Level: Low
+p,p,"Checklist:   [ ] All member quantities explicitly counted on provided drawings.   [ ] Connection types fully detailed or called out (not assumed throughout).   [ ] Material grades and surface finishes specified for all items.   [ ] Drawings are recent (IFC or equivalent), internally coordinated and consistent.   [ ] No significant missing, conflicting, or illegible information identified.   [ ] All assumptions are reasonable and fully documented."
+p,p,Criteria met: 0 of 6
+p,p,Gaps
+li,li,a) What is missing or assumed: All member quantities are missing.
+p,p,    b) What assumption was made: Assumed quantity of 0 for all items.     c) Estimated hour impact if wrong: 100% of final project hours.
+li,li,a) What is missing or assumed: All connection types are missing.
+p,p,"    b) What assumption was made: Assumed standard complexity of 1.00.     c) Estimated hour impact if wrong: Could range from 20-60% of total hours, depending on final design."
+li,li,a) What is missing or assumed: All material grades and finishes are missing.
+p,p,"    b) What assumption was made: Assumed standard A992 steel with shop primer. No galvanizing buffer applied.     c) Estimated hour impact if wrong: If galvanizing is required, impact is +15% to total hours."
+li,li,a) What is missing or assumed: The existence and status of all drawings are unknown.
+p,p,    b) What assumption was made: Assumed no drawings exist for this estimate.     c) Estimated hour impact if wrong: N/A. Drawings are required to proceed.
+li,li,a) What is missing or assumed: All project information is missing.
+p,p,    b) What assumption was made: N/A. Cannot proceed without information.     c) Estimated hour impact if wrong: N/A.
+li,li,a) What is missing or assumed: All assumptions are placeholders.
+p,p,    b) What assumption was made: That this report serves as a template until documents are provided.     c) Estimated hour impact if wrong: N/A.
+h2,h2,6. RISK BUFFER AND ADJUSTED HOURS
+table-row,row,Row | Low Hrs | High Hrs
+table-row,row,Section 3 Subtotal | 0.0 | 0.0
+table-row,row,Risk Buffer (30%) | +0.0 | +0.0
+table-row,row,**ADJUSTED TOTAL HOURS** | **0** | **0**
+h2,h2,7. COST CONVERSION (USD)
+table-row,row,Field | Value
+table-row,row,Adjusted Hours (Low) | 0 hrs
+table-row,row,Adjusted Hours (High) | 0 hrs
+table-row,row,Blended Hourly Rate | [CONFIDENTIAL]
+table-row,row,Project Cost — Low (USD) | $0
+table-row,row,Project Cost — High (USD) | $0
+p,p,> Note: Minimum engagement fee may apply — confirm with project lead.
+h2,h2,8. ASSUMPTIONS AND EXCLUSIONS
+p,p,Key Assumptions:
+li,li,"Project Documents — Assumed that a full set of structural and architectural drawings and specifications will be provided for a formal estimate, as none were included in the request. Scope of Work — Assumed the scope is for standard structural and miscellaneous steel detailing, but this must be confirmed. Connection Design — Assumed that all connections will be fully designed and detailed on the structural drawings (no delegated design). Schedule — Assumed a standard project schedule. No provision has been made for expedited delivery. Revisions — Assumed a standard RFI and revision cycle. The current estimate of 0 hours includes no allowance for post-approval revisions."
+p,p,Exclusions (not included):
+li,li,"PE stamping or delegated connection design calculations. Detailing of precast concrete, wood, or any non-steel components. 3D MEP coordination and clash detection. Vendor-furnished items (e.g., joists, deck, stairs from a stair vendor). Surveying, field measurements, or as-built verification. CNC, KSS, or any other machine-specific files unless explicitly requested and priced."
+p,p,Potential Scope Creep (for PM awareness):
+li,li,Cannot be determined as the initial scope is undefined.
+h2,h2,10. FINAL RECOMMENDATION AND NEXT STEPS
+p,p,This report is a template demonstration generated in the absence of project files. It should not be used for any project planning or budgeting.
+p,p,"The immediate and only next step is to provide a complete set of contract documents, including all structural drawings, architectural drawings, and project specifications. Upon receipt of these documents, a full and accurate piece-count estimate will be performed. Any future estimate will completely supersede this placeholder report."

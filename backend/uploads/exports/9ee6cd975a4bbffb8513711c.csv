@@ -1,0 +1,5 @@
+section,type,content
+p,p,"To proceed with the SteelSight — Estimation Pro analysis, please provide the following required inputs:"
+ol,ol,"Project Files: Upload all relevant structural drawings (framing plans, elevations, sections, details), specifications, and any available Bill of Materials (BOM). Per-Ton Rate Band: Specify your shop's commercial per-ton fabrication rates:"
+li,li,"RATE_PER_TON_LOW (e.g., $3,500 / ton) RATE_PER_TON_HIGH (e.g., $4,200 / ton)"
+p,p,"Once these inputs are provided, I will execute the full tonnage take-off and cost estimation as per the requested mode."
