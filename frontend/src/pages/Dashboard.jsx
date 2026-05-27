@@ -113,10 +113,6 @@ export default function Dashboard() {
                         </div>
                     </div>
                     <div className="flex gap-3">
-                        <Link to="/estimate" className="btn-ghost-navy" data-testid="dashboard-estimate">
-                            <Calculator size={14} />
-                            Estimation
-                        </Link>
                         <Link to="/analyze" className="btn-gold" data-testid="dashboard-quick-analyze">
                             <Sparkles size={14} />
                             Quick Analyze
@@ -285,7 +281,7 @@ export default function Dashboard() {
                         <table className="w-full text-left">
                             <thead className="bg-background">
                                 <tr className="border-b border-ink-line">
-                                    {["Mode", "Status", "Critical", "Major", "Minor", "Score", ""].map((h) => (
+                                    {["Mode", "Status", ""].map((h) => (
                                         <th
                                             key={h}
                                             className="px-6 py-3 font-mono text-[10px] uppercase tracking-wider text-ink-muted"
@@ -313,18 +309,6 @@ export default function Dashboard() {
                                         <td className="px-6 py-4">
                                             <StatusPill status={a.status} />
                                         </td>
-                                        <td className="px-6 py-4 font-mono text-sm text-destructive">
-                                            {a.issues_found?.critical ?? 0}
-                                        </td>
-                                        <td className="px-6 py-4 font-mono text-sm text-warning">
-                                            {a.issues_found?.major ?? 0}
-                                        </td>
-                                        <td className="px-6 py-4 font-mono text-sm text-success">
-                                            {a.issues_found?.minor ?? 0}
-                                        </td>
-                                        <td className="px-6 py-4 font-mono text-sm text-navy">
-                                            {a.quality_score ? `${Math.round(a.quality_score)}%` : "—"}
-                                        </td>
                                         <td className="px-6 py-4">
                                             <Link
                                                 to={`/analyses/${a.id}`}
@@ -338,7 +322,7 @@ export default function Dashboard() {
                                 {(!data?.recent_analyses || data.recent_analyses.length === 0) && (
                                     <tr>
                                         <td
-                                            colSpan={7}
+                                            colSpan={3}
                                             className="px-6 py-12 text-center text-sm text-ink-muted"
                                         >
                                             No analyses yet — <Link className="text-gold underline" to="/analyze">run your first one</Link>.

@@ -1,26 +1,25 @@
-"""LLM service with 4X Core model fallback chain (powered by emergentintegrations)."""
+"""LLM service with direct Gemini fallback chain."""
 from __future__ import annotations
 
 import logging
 from typing import Iterable
 
-from emergentintegrations.llm.chat import (
-    FileContentWithMimeType,
-    LlmChat,
-    UserMessage,
-)
+import google.generativeai as genai
 
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-# Internal model chain (not exposed to users — UI always says "STRUCTMIND CORE")
+# Configure Gemini
+genai.configure(api_key=settings.llm_key)
+
+# Internal model chain
 MODEL_CHAIN: list[str] = [
     "gemini-2.5-pro",
     "gemini-2.5-flash",
 ]
 
-# Public display label for each internal model tier
+# Public display label
 ENGINE_LABELS: dict[str, str] = {
     "gemini-2.5-pro": "STRUCTMIND CORE · PRO",
     "gemini-2.5-flash": "STRUCTMIND CORE · FAST",
@@ -40,32 +39,75 @@ async def run_analysis(
     file_paths: Iterable[tuple[str, str]] = (),
 ) -> tuple[str, str]:
     """
-    Execute LLM call with full 4X Core fallback chain.
-    file_paths: iterable of (absolute_path, mime_type).
-    Returns (output_markdown, engine_display_label).
+    Execute Gemini call with fallback chain.
+
+    file_paths:
+        iterable of (absolute_path, mime_type)
+
+    Returns:
+        (output_markdown, engine_display_label)
     """
-    file_contents = [
-        FileContentWithMimeType(file_path=p, mime_type=mt) for p, mt in file_paths
-    ]
 
     last_err: Exception | None = None
-    for model in MODEL_CHAIN:
+
+    # Build prompt
+    prompt = f"""
+SYSTEM PROMPT:
+{system_prompt}
+
+USER INPUT:
+{user_text}
+"""
+
+    for model_name in MODEL_CHAIN:
         try:
-            chat = LlmChat(
-                api_key=settings.llm_key,
-                session_id=session_id,
-                system_message=system_prompt,
-            ).with_model("gemini", model)
-            msg = UserMessage(text=user_text, file_contents=file_contents or None)
-            logger.info("4X Core LLM call · tier=%s · session=%s", model, session_id)
-            response = await chat.send_message(msg)
-            if response and isinstance(response, str) and response.strip():
-                return response, engine_label(model)
-            raise RuntimeError("Empty response")
-        except Exception as e:  # noqa: BLE001
+            logger.info(
+                "STRUCTMIND CORE LLM call · tier=%s · session=%s",
+                model_name,
+                session_id,
+            )
+
+            model = genai.GenerativeModel(model_name)
+
+            # File support
+            uploaded_files = []
+
+            for file_path, mime_type in file_paths:
+                try:
+                    uploaded_file = genai.upload_file(
+                        path=file_path,
+                        mime_type=mime_type,
+                    )
+                    uploaded_files.append(uploaded_file)
+                except Exception as file_error:
+                    logger.warning(
+                        "File upload failed for %s: %s",
+                        file_path,
+                        file_error,
+                    )
+
+            # Generate response
+            if uploaded_files:
+                response = model.generate_content(
+                    [prompt, *uploaded_files]
+                )
+            else:
+                response = model.generate_content(prompt)
+
+            if response and response.text.strip():
+                return response.text, engine_label(model_name)
+
+            raise RuntimeError("Empty response received")
+
+        except Exception as e:
             last_err = e
-            logger.warning("Engine tier %s failed: %s", model, e)
+            logger.warning(
+                "Engine tier %s failed: %s",
+                model_name,
+                e,
+            )
             continue
 
-    raise RuntimeError(f"All STRUCTMIND CORE tiers failed. Last error: {last_err}")
-
+    raise RuntimeError(
+        f"All STRUCTMIND CORE tiers failed. Last error: {last_err}"
+    )

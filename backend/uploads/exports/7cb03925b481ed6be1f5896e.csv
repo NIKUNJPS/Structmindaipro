@@ -1,0 +1,157 @@
+section,type,content
+h2,h2,CALCULATION MANIFEST — SINGLE SOURCE OF TRUTH
+p,p,--- All locked input and output values for this estimate. Sections 1 and 7 copy from here.
+table-row,row,Parameter | Value
+table-row,row,AI-Extracted Fabricated Tonnage | 12.33 t
+table-row,row,Material Type | Carbon Steel
+table-row,row,Surface Treatment | Shop primer only
+table-row,row,Assembly Complexity | Mixed bolt and weld
+table-row,row,Material Factor | x1.00
+table-row,row,Surface Factor | x1.00
+table-row,row,Assembly Factor | x1.10
+table-row,row,Composite Adjustment Factor | x1.10
+table-row,row,"Fixed Rate — Low (USD per ton) | $3,500"
+table-row,row,"Fixed Rate — Mid (USD per ton) | $4,000"
+table-row,row,"Fixed Rate — High (USD per ton) | $4,500"
+table-row,row,"Adjusted Rate — Low | $3,850"
+table-row,row,"Adjusted Rate — Mid | $4,400"
+table-row,row,"Adjusted Rate — High | $4,950"
+table-row,row,Country | USA
+table-row,row,Tax Rate Applied | 0%
+table-row,row,"LOCK COST — LOW | $47,500"
+table-row,row,"LOCK COST — MID | $54,300"
+table-row,row,"LOCK COST — HIGH | $61,000"
+h2,h2,1. EXECUTIVE SUMMARY
+p,p,--- Project cost summary at fixed rate band.
+table-row,row,Metric | Value
+table-row,row,Project Name or ID | HOME 2 - CAROWINDS CABELAS DR.
+table-row,row,Country | USA
+table-row,row,Total Fabricated Tonnage | 12.33 t
+table-row,row,Material Type | Carbon Steel
+table-row,row,Surface Treatment | Shop primer only
+table-row,row,Assembly Complexity | Mixed bolt and weld
+table-row,row,Composite Adjustment Factor | x1.10
+table-row,row,"Fixed Rate Band Applied | $3,500 — $4,500 per ton"
+table-row,row,Tax Rate | 0%
+table-row,row,"Estimated Cost — Low (inc. tax) | $47,500"
+table-row,row,"Estimated Cost — Mid (inc. tax) | $54,300"
+table-row,row,"Estimated Cost — High (inc. tax) | $61,000"
+table-row,row,"Cost per Fabricated Ton — Mid | $4,400 per ton"
+p,p,"Top Three Commercial Risks: 1.  MISSING DATA — Column lengths, lintel quantities/lengths, and bearing plate quantities are absent from the drawings and have been assumed for this estimate. This represents a potential tonnage variance of +/- 2.5 tons. 2.  PROFILE DISCREPANCIES — Conflicts exist between schedules and plans (e.g., C86 vs C8). HSS6x6x5/8 is a non-standard profile requiring manual weight verification. Resolution will require RFIs and may alter tonnage. 3.  SCOPE GAPS — The full scope for loose brick lintels and galvanized bearing plates is undefined. Allowances are included, but actual requirements could significantly impact cost for materials and galvanizing."
+h2,h2,2. BASIS OF ESTIMATE
+p,p,"--- Drawings reviewed: S0.01, S0.02, S1.01, S1.02, S1.04, S2.01, S2.02, S2.03, S2.04, S3.01, S3.02, S3.03, S3.04, S3.05, S3.06."
+p,p,Tonnage extraction method: (c) Estimated from framing plans where BOM is absent or incomplete. Member lengths were derived from grid dimensions on drawing S1.02. Column heights and lintel quantities/lengths were assumed due to missing information.
+p,p,Composite factor selection:
+li,li,"Material (Carbon Steel): Explicitly stated in General Notes on sheet S0.01, Section 051200, item 1.04. Surface Treatment (Shop primer only): Stated as the primary coating in General Notes on sheet S0.01, Section 051200, item 2.05.A. A note on S0.02 requires some bearing plates to be galvanized, which is flagged as a conflict. Assembly Complexity (Mixed bolt and weld): Inferred from connection details on sheet S0.02 and S3.06, which show a combination of bolted connections, welded plates, and welded studs."
+p,p,"Rate basis: Fixed rate band of $3,500 (low) to $4,500 (high) per fabricated ton applied. Midpoint rate of $4,000 per fabricated ton used for the headline cost. These rates represent current USA structural steel shop fabrication pricing for the member types and complexity class identified in this package."
+p,p,Tax applied: 0% for USA.
+p,p,"Global assumptions: All structural steel grades conform to notes on S0.01 (A992 for W-shapes, A500 Gr. C for HSS, A36 for plates/angles)."
+h2,h2,3. MEMBER-BY-MEMBER TONNAGE TAKE-OFF
+p,p,"--- Table 3A — Primary Structural Members Columns, primary beams, moment frames, transfer members, and lateral bracing."
+table-row,row,No. | Type | Mark | Profile | Qty | Length (Imperial) | Length (mm) | Unit Wt (kg/m) | Est Weight (kg) | Est Weight (lb) | Grade | Source Sheet | Extraction Method
+table-row,row,"1 | Column | C5 | HSS6x6x3/8 | 2 | 14'-0"" | 4,267 | 33.1 | 282.4 | 622.6 | A500 Gr. C | S0.02, S1.01 | Assumed Length"
+table-row,row,"2 | Column | C6/C8 | HSS6x6x5/8 | 6 | 14'-0"" | 4,267 | NOT IN TABLE | 1,285.4 | 2,833.8 | A500 Gr. C | S0.02, S1.01 | Assumed Length"
+table-row,row,"3 | Column | CSA | HSS6x6x3/8 | 4 | 14'-0"" | 4,267 | 33.1 | 564.9 | 1,245.4 | A500 Gr. C | S0.02, S1.01 | Assumed Length"
+table-row,row,"4 | Column | Trellis | HSS8x6x3/8 | 4 | 8'-0"" | 2,438 | NOT IN TABLE | 386.2 | 851.4 | A500 Gr. C | S3.06 | Assumed Length"
+table-row,row,"5 | Beam | — | W14x22 | 32 | 12'-10"" | 3,912 | 32.7 | 4,096.3 | 9,030.8 | A992 | S1.02 | From Plan"
+table-row,row,"6 | Beam | — | W16x36 | 1 | 25'-3"" | 7,696 | 53.6 | 412.5 | 909.4 | A992 | S1.02 | From Plan"
+table-row,row,"7 | Beam | — | HSS18x6x3/8 | 7 | Various | — | NOT IN TABLE | 1,693.6 | 3,733.7 | A500 Gr. C | S1.02 | From Plan"
+table-row,row,"8 | Beam | Trellis | HSS8x6x3/8 | 2 | 13'-0"" | 3,962 | NOT IN TABLE | 313.8 | 691.8 | A500 Gr. C | S3.06 | From Plan"
+table-row,row,"9 | Lintel | L1 | W8x24 | 2 | 20'-0"" | 6,096 | 35.7 | 435.2 | 959.5 | A992 | S0.02 | Assumed Qty/Len"
+table-row,row,"10 | Lintel | L2 | W16x50 | 2 | 20'-0"" | 6,096 | 74.4 | 907.3 | 2,000.3 | A992 | S0.02 | Assumed Qty/Len"
+p,p,"Table 3B — Secondary and Miscellaneous Members Secondary beams, purlins, girts, joists, bracing, stairs, handrails, and platforms."
+table-row,row,No. | Type | Mark | Profile | Qty | Length (Imperial) | Length (mm) | Unit Wt (kg/m) | Est Weight (kg) | Est Weight (lb) | Grade | Source Sheet | Extraction Method
+table-row,row,"11 | Beam | — | HSS9x5x3/8 | 1 | 12'-10"" | 3,912 | NOT IN TABLE | 136.1 | 300.1 | A500 Gr. C | S1.02 | From Plan"
+table-row,row,"12 | Beam | — | HSS6x4x1/4 | 1 | 12'-10"" | 3,912 | 18.0 | 70.4 | 155.2 | A500 Gr. C | S1.02 | From Plan"
+table-row,row,"13 | Lintel | — | L6x4x3/8 | 20 | 6'-0"" | 1,829 | 14.7 | 537.7 | 1,185.4 | A36 | S0.02 | Assumed Qty/Len"
+p,p,"Table 3C — Connection Material and Plates Shear plates, base plates, stiffeners, gusset plates, and embedded plates."
+table-row,row,No. | Description | Thickness | Width | Length | Qty | Weight (kg) | Weight (lb) | Source Sheet | Extraction Method
+table-row,row,"14 | Base Plate for C5 | 1"" | 12"" | 12"" | 2 | 37.0 | 81.6 | S0.02 | From Schedule"
+table-row,row,"15 | Base Plate for C6/C8 | 1"" | 14"" | 14"" | 6 | 151.2 | 333.3 | S0.02 | From Schedule"
+table-row,row,"16 | Base Plate for CSA | 3/4"" | 12"" | 12"" | 4 | 55.6 | 122.6 | S0.02 | From Schedule"
+table-row,row,"17 | Base Plate for Trellis | 1"" | 16"" | 16"" | 4 | 131.6 | 290.1 | S3.06 | From Detail"
+table-row,row,"18 | Bottom Plate for L1 | 1/4"" | 7"" | 40'-0"" | 1 | 108.0 | 238.1 | S0.02 | Assumed"
+table-row,row,"19 | Bottom Plate for L2 | 1/4"" | 10"" | 40'-0"" | 1 | 154.3 | 340.2 | S0.02 | Assumed"
+table-row,row,"20 | Bearing Plate Allowance | 3/4"" | 8"" | 12"" | 20 | 184.0 | 405.7 | S0.02 | Assumed"
+table-row,row,"21 | Cap Plate for WP | 1/2"" | 10"" | 10"" | 4 | 25.6 | 56.4 | S0.02 | Assumed"
+p,p,Table 3D — Tonnage Subtotals Consolidated weight by category feeding into the cost model.
+table-row,row,Category | Count | Total Weight (kg) | Total Weight (lb) | Est. Tons
+table-row,row,"W-Shapes — Columns and Beams | 38 | 5,851.3 | 12,899.9 | 5.85"
+table-row,row,"HSS and Tube | 22 | 4,732.8 | 10,434.4 | 4.73"
+table-row,row,Pipe | 0 | 0.0 | 0.0 | 0.00
+table-row,row,"Angles and Channels | 20 | 537.7 | 1,185.4 | 0.54"
+table-row,row,"Plates (all types) | 41 | 847.3 | 1,867.9 | 0.85"
+table-row,row,Miscellaneous and Embeds | 0 | 0.0 | 0.0 | 0.00
+table-row,row,Bolts and Accessories (3.00% addition) | — | 359.1 | 791.7 | 0.36
+table-row,row,"**TOTAL** | **121** | **12,328.2** | **27,179.3** | **12.33**"
+h2,h2,4. COST BUILD-UP BY MEMBER CATEGORY
+p,p,--- Per-category cost using the three-rate band. Adjusted rates = base rate x composite factor.
+table-row,row,Category | Est. Tons | Adj. Rate Low (USD/ton) | Adj. Rate Mid (USD/ton) | Adj. Rate High (USD/ton) | Cost Low (USD) | Cost Mid (USD) | Cost High (USD) | Pct of Total
+table-row,row,"W-Shapes | 5.85 | $3,850 | $4,400 | $4,950 | $22,523 | $25,740 | $28,958 | 47.5%"
+table-row,row,"HSS and Tube | 4.73 | $3,850 | $4,400 | $4,950 | $18,211 | $20,812 | $23,414 | 38.4%"
+table-row,row,"Pipe | 0.00 | $3,850 | $4,400 | $4,950 | $0 | $0 | $0 | 0.0%"
+table-row,row,"Angles and Channels | 0.54 | $3,850 | $4,400 | $4,950 | $2,079 | $2,376 | $2,673 | 4.4%"
+table-row,row,"Plates | 0.85 | $3,850 | $4,400 | $4,950 | $3,273 | $3,740 | $4,208 | 6.9%"
+table-row,row,"Miscellaneous and Embeds | 0.00 | $3,850 | $4,400 | $4,950 | $0 | $0 | $0 | 0.0%"
+table-row,row,"Bolts and Accessories | 0.36 | $3,850 | $4,400 | $4,950 | $1,386 | $1,584 | $1,782 | 2.9%"
+table-row,row,"**TOTAL** | **12.33** | **$3,850** | **$4,400** | **$4,950** | **$47,471** | **$54,252** | **$61,034** | **100%**"
+h2,h2,5. PROCESS COST BREAKDOWN — MIDPOINT SCENARIO
+p,p,"--- Distributing $54,300 across industry-standard fabrication process activities. Percentages are fixed fabrication industry standards applied at midpoint."
+p,p,Fabrication cost allocated across process activities at the midpoint scenario.
+table-row,row,Process Activity | Industry Pct | Amount (USD) | Notes
+table-row,row,"Material — mill sections and plate | 35% | $18,900 | Structural steel mill cost"
+table-row,row,"Shop labour — cut, fit, and weld | 30% | $16,300 | Includes AWS D1.1 weld operations"
+table-row,row,"Coatings and surface preparation | 12% | $6,500 | SSPC class as specified"
+table-row,row,"Consumables — weld wire, bolts, and gas | 6% | $3,300 | Per-ton allowance"
+table-row,row,"Equipment — plasma, burn table, drill | 7% | $3,800 | CNC and NC machine allocation"
+table-row,row,"Overhead and QA/QC | 6% | $3,300 | Inspection, NDT, project management"
+table-row,row,"Shop margin | 4% | $2,200 | Fabricator margin"
+table-row,row,"**TOTAL** | **100%** | **$54,300** | **Midpoint scenario**"
+h2,h2,6. DRAWING COMPLETENESS AND COST EXPOSURE ASSESSMENT
+p,p,--- Areas of drawing incompleteness that create commercial exposure for this estimate.
+table-row,row,Area of Assessment | Status | Commercial Exposure if Unresolved
+table-row,row,All quantities confirmed from BOM or member schedule | NOT CONFIRMED | **CRITICAL:** Tonnage may vary by +/- 20% due to assumed quantities and lengths.
+table-row,row,Material grades explicit on all members | CONFIRMED | Low: Grades are clear in General Notes on S0.01.
+table-row,row,"Surface treatment confirmed, not assumed | PARTIAL | Medium: Note for galvanized plates (S0.02) conflicts with general primer note (S0.01)."
+table-row,row,Assembly complexity confirmed from drawings | CONFIRMED | Low: Details on S0.02 and S3.06 are sufficient to determine complexity.
+table-row,row,No conflicting BOM vs general notes grade callouts | CONFIRMED | Low: No conflicts found.
+table-row,row,Drawings are IFC or internally coordinated | PARTIAL | **CRITICAL:** Significant conflicts between plans and schedules create risk.
+table-row,row,"Galvanizing, AESS, or fire rating fully resolved | NOT CONFIRMED | Medium: Scope of galvanizing is unclear."
+p,p,Cost Waterfall — Midpoint Scenario Step-by-step cost build-up at the midpoint rate.
+table-row,row,Step | Amount (USD)
+table-row,row,"Base cost — 12.33t x $4,400/ton | $54,252"
+table-row,row,Tax at 0% | +$0
+table-row,row,"Grand Total — Low (at $3,500/ton base x composite x tax) | $47,500"
+table-row,row,"**Grand Total — Mid — Headline Cost** | **$54,300**"
+table-row,row,"Grand Total — High (at $4,500/ton base x composite x tax) | $61,000"
+h2,h2,7. COST CONVERSION SUMMARY
+p,p,--- Final locked cost summary for this estimate.
+table-row,row,Field | Value
+table-row,row,Fabricated Tonnage | 12.33 t
+table-row,row,"Fixed Rate Band Applied | $3,500 — $4,500 per ton"
+table-row,row,Composite Adjustment Factor | x1.10
+table-row,row,"Adjusted Rate — Low | $3,850 per ton"
+table-row,row,"Adjusted Rate — Mid | $4,400 per ton"
+table-row,row,"Adjusted Rate — High | $4,950 per ton"
+table-row,row,Country and Tax | USA at 0%
+table-row,row,"Grand Total — Low (inc. tax) | $47,500"
+table-row,row,"Grand Total — Mid — Headline (inc. tax) | $54,300"
+table-row,row,"Grand Total — High (inc. tax) | $61,000"
+table-row,row,"Cost per Fabricated Ton — Mid | $4,400 per ton"
+h2,h2,8. ASSUMPTIONS AND EXCLUSIONS
+p,p,--- Key Assumptions (minimum five specific items — cite sheet references):
+li,li,"Column heights are assumed to be 14'-0"" (4,267 mm) for main columns and 8'-0"" (2,438 mm) for trellis columns, as no elevations or lengths are provided in schedules on S0.02. Rate band of $3,500 to $4,500 per fabricated ton represents current USA market pricing for the member types, surface treatment, and assembly complexity identified in this estimate. Quantities and lengths for all lintels (W-shape and angle) are assumed based on typical building requirements, as they are not quantified or located on framing plans (see S0.02 and S1.02). Unit weights for profiles not found in the standard reference table (e.g., HSS6x6x5/8) have been sourced from external AISC data and require verification before procurement. All conflicts between plans and schedules (e.g., column marks C8 vs. C86 on S1.01 and S0.02) have been resolved by prioritizing the schedule, pending formal RFI clarification. The primary coating is shop primer per S0.01; the cost impact of galvanized bearing plates noted on S0.02 is assumed to be minimal and contained within the estimate band."
+p,p,Exclusions — Items NOT included in this estimate:
+li,li,"Site erection labour, cranes, manlifts, rigging, and flagging. Professional engineer stamping or delegated connection design. Loose anchor bolts cast-in-place by the general contractor. Site touch-up painting after final erection. Tax or duties beyond 0% applied in this estimate. 3D MEP coordination and cross-trade clash detection. Inflation beyond 30 calendar days from the date of this estimate. Supply and installation of wood framing, joists, trusses, or sheathing shown on framing plans."
+p,p,Change Order Triggers:
+li,li,"Tonnage increases or decreases exceeding 5% from this estimate. Coating system upgrade — for example, from primer-only to hot-dip galvanised. Connection type change from simple bolted to AESS or heavily welded. Addition of member categories not shown on the current drawing set. Revision of drawings that changes profile sizes or eliminates members."
+h2,h2,10. FINAL RECOMMENDATION
+p,p,"--- This estimate is preliminary and suitable for budgetary planning only, not for a fixed-price bid. The commercial risk is high due to incomplete drawings. Before this estimate can be considered firm, RFIs must be issued to clarify all missing quantities, lengths, member profiles, and scope conflicts. If tonnage changes by more than 5% or the scope of galvanizing is expanded, a full re-estimate is required."
+h2,h2,ACTION SUMMARY
+p,p,--- Priority Actions for This Analysis
+table-row,row,No. | Priority | Action Required | Owner | Deadline | Blocking
+table-row,row,1 | CRITICAL | Issue RFI to confirm all column lengths and wind post heights. | Estimator | 2 days | Firm Quote
+table-row,row,"2 | CRITICAL | Issue RFI for a complete lintel schedule with marks, sizes, lengths, and locations. | Estimator | 2 days | Firm Quote"
+table-row,row,"3 | HIGH | Issue RFI to resolve conflicts between plans and schedules (e.g., C8 vs C86). | Estimator | 3 days | Detailing"
+table-row,row,4 | HIGH | Issue RFI to clarify coating requirements: Is main steel primed-only and only bearing plates galvanized? | Estimator | 3 days | Procurement
+table-row,row,5 | HIGH | Issue RFI to confirm profile HSS6x6x5/8 is correct or a typo. | Estimator | 3 days | Procurement

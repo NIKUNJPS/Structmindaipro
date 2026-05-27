@@ -1,0 +1,133 @@
+section,type,content
+h2,h2,CALCULATION MANIFEST — SINGLE SOURCE OF TRUTH
+p,p,--- All locked input parameters and cost outputs for this estimate. Sections 1 and 7 copy values from this table verbatim without re-derivation.
+table-row,row,Parameter | Value
+table-row,row,Fabricated Tonnage — AI Extracted | 4.92 t
+table-row,row,Material Type | Carbon Steel
+table-row,row,Surface Treatment | Shop primer only
+table-row,row,Assembly Complexity | Mixed bolt and weld
+table-row,row,Material Factor | x1.00
+table-row,row,Surface Factor | x1.00
+table-row,row,Assembly Factor | x1.10
+table-row,row,Composite Adjustment Factor | x1.10
+table-row,row,Rate Basis | DEFAULT
+table-row,row,"Rate — Low (USD per ton) | $3,500"
+table-row,row,"Rate — Mid (USD per ton) | $4,000"
+table-row,row,"Rate — High (USD per ton) | $4,500"
+table-row,row,"Adjusted Rate — Low | $3,850"
+table-row,row,"Adjusted Rate — Mid | $4,400"
+table-row,row,"Adjusted Rate — High | $4,950"
+table-row,row,Country | USA
+table-row,row,Tax Rate | 0%
+table-row,row,"LOCK COST — LOW | $18,900"
+table-row,row,"LOCK COST — MID | $21,600"
+table-row,row,"LOCK COST — HIGH | $24,400"
+table-row,row,"Cost per Fabricated Ton — Mid | $4,390"
+p,p,All values above are locked for this document. Sections 1 and 7 reproduce these values exactly. No recalculation permitted.
+h2,h2,1. EXECUTIVE SUMMARY
+p,p,--- Fabrication cost summary for this project at the applied rate band.
+table-row,row,Metric | Value
+table-row,row,Project Name or ID | HOME 2 - CAROWINDS
+table-row,row,Country | USA
+table-row,row,Total Fabricated Tonnage | 4.92 t
+table-row,row,Material Type | Carbon Steel
+table-row,row,Surface Treatment | Shop primer only
+table-row,row,Assembly Complexity | Mixed bolt and weld
+table-row,row,Composite Adjustment Factor | x1.10
+table-row,row,Rate Basis | DEFAULT
+table-row,row,"Rate Band Applied | $3,500 — $4,500 per fabricated ton"
+table-row,row,Tax Rate | 0%
+table-row,row,"Estimated Cost — Low (inc. tax) | $18,900"
+table-row,row,"Estimated Cost — Mid (inc. tax) | $21,600"
+table-row,row,"Estimated Cost — High (inc. tax) | $24,400"
+table-row,row,"Cost per Fabricated Ton — Mid | $4,390 per ton"
+h2,h2,2. BASIS OF ESTIMATE
+p,p,--- Drawings reviewed: S0.01 GENERAL NOTES S0.02 TYPICAL SCHEDULES & DETAILS S0.03 SPECIAL INSPECTIONS S1.01 FOUNDATION PLAN S1.02 SECOND FLOOR FRAMING PLAN S1.03 TYPICAL LEVEL FRAMING PLAN S1.04 ROOF FRAMING PLAN S2.01 STRUCTURAL WALL DESIGNATION PLAN S2.02 CMU AND WOOD STUD SCHEDULES S2.03 CMU REINFORCEMENT ELEVATIONS - STAIR #1/ELEVATOR S2.04 CMU REINFORCEMENT ELEVATIONS - STAIR #2 S3.01 FOUNDATION SECTIONS S3.02 FLOOR FRAMING SECTIONS S3.03 ROOF FRAMING SECTIONS S3.04 ROOF FRAMING SECTIONS S3.05 CANOPY FRAMING SECTIONS S3.06 TRELLIS AND SITE WALL DETAILS
+p,p,Tonnage extraction method: Method C — Estimated from framing plans where a BOM is not present. Member quantities and lengths were taken from sheets S1.02 and S3.06.
+p,p,"Composite factor selection: Material factor x1.00: Carbon Steel (ASTM A992, A500, A36) specified in General Structural Notes on sheet S0.01. Surface factor x1.00: ""ALL EXPOSED STRUCTURAL STEEL SHALL BE SHOP PAINTED WITH ONE COAT OF PRIMER"" specified in General Structural Notes on sheet S0.01. Assembly factor x1.10: Determined from the scope of work visible on the drawings, which includes both welded components (lintel plates on S0.02) and bolted connections (detail 1/S0.02)."
+p,p,"Rate basis: Rate band of $3,500 to $4,500 per fabricated ton applied. Midpoint of $4,000 per ton is the headline figure."
+p,p,Tax: 0% applied for USA.
+p,p,"Scope basis: The tonnage figure includes W-shapes, HSS members, and plates that are explicitly shown on the Second Floor Framing Plan (S1.02) and Trellis Details (S3.06) and for which a unit weight is available in the AISC reference table. Excluded from this estimate are all lintels (W8x24, W16x50, L7x4x3/8, L6x4x3/8, L4x4x3/8) and columns (C5, C5A, C6, C8B) from the schedules on S0.02 as their quantities and locations were not specified on the framing plans. Also excluded are all HSS members whose profiles (HSS18x6x3/8, HSS9x5x3/8, HSS8x6x3/8) do not appear in the provided AISC Unit Weight Reference table."
+h2,h2,3. MEMBER-BY-MEMBER TONNAGE TAKE-OFF
+p,p,"--- Table 3A — Primary Structural Members All columns, primary beams, moment frames, transfer members, and lateral bracing elements extracted from the drawing package."
+table-row,row,No. | Type | Mark | Profile | Qty | Length Imperial | Length mm | Unit Wt kg/m | Est Wt kg | Est Wt lb | Grade | Source Sheet | Method
+table-row,row,"1 | BEAM | — | W16x36 | 1 | 16'-11"" | 5,156 | 53.6 | 276 | 609 | A992 | S1.02 | PLAN ESTIMATE"
+table-row,row,2 | BEAM | — | HSS18x6x3/8 | 3 | — | — | NOT IN TABLE | NOT IN TABLE | NOT IN TABLE | A500 | S1.02 | PLAN ESTIMATE
+table-row,row,3 | BEAM | — | HSS8x6x3/8 | 2 | — | — | NOT IN TABLE | NOT IN TABLE | NOT IN TABLE | A500 | S3.06 | PLAN ESTIMATE
+table-row,row,4 | COLUMN | — | HSS8x6x3/8 | 4 | — | — | NOT IN TABLE | NOT IN TABLE | NOT IN TABLE | A500 | S3.06 | PLAN ESTIMATE
+p,p,"Table 3B — Secondary and Miscellaneous Members All secondary beams, purlins, girts, joists, bracing, stairs, handrails, platforms, and miscellaneous structural steel from drawings."
+table-row,row,No. | Type | Mark | Profile | Qty | Length Imperial | Length mm | Unit Wt kg/m | Est Wt kg | Est Wt lb | Grade | Source Sheet | Method
+table-row,row,"1 | BEAM | — | W14x22 | 34 | 12'-10"" | 3,912 | 32.7 | 4,347 | 9,584 | A992 | S1.02 | PLAN ESTIMATE"
+table-row,row,2 | HEADER | — | HSS9x5x3/8 | 1 | — | — | NOT IN TABLE | NOT IN TABLE | NOT IN TABLE | A500 | S1.02 | PLAN ESTIMATE
+table-row,row,"3 | BEAM | — | HSS6x4x1/4 | 1 | 4'-0"" | 1,219 | 18.0 | 22 | 48 | A500 | S1.02 | PLAN ESTIMATE"
+p,p,"Table 3C — Connection Material and Plates All shear plates, base plates, stiffeners, gusset plates, and embedded plates. Show the full plate formula calculation per row."
+table-row,row,No. | Description | Thickness mm | Width mm | Length m | Qty | Wt kg | Wt lb | Source Sheet | Method
+table-row,row,1 | Trellis Base Plate | 25.4 | 406 | 0.406 | 4 | 131 | 290 | S3.06 | PLAN ESTIMATE
+p,p,Table 3D — Tonnage Subtotals by Category Weight consolidated by member category. The TOTAL row must equal LOCK_TONNAGE including the 3.00% accessory addition.
+table-row,row,Category | Count | Total Wt kg | Total Wt lb | Metric Tons
+table-row,row,"W-Shapes — Columns and Beams | 35 | 4,623 | 10,193 | 4.62"
+table-row,row,HSS and Tube | 10 | 22 | 48 | 0.02
+table-row,row,Pipe | 0 | 0 | 0 | 0.00
+table-row,row,Angles and Channels | 0 | 0 | 0 | 0.00
+table-row,row,Plates — all types | 4 | 131 | 290 | 0.13
+table-row,row,Miscellaneous and Embeds | 0 | 0 | 0 | 0.00
+table-row,row,Bolts and Accessories 3.00% | — | 144 | 318 | 0.14
+table-row,row,"TOTAL | 49 | 4,920 | 10,848 | 4.92"
+h2,h2,4. COST BUILD-UP BY MEMBER CATEGORY
+p,p,--- Fabrication cost for each category at all three rate points. Adjusted rate = base rate x composite factor applied uniformly to all categories.
+table-row,row,Category | Tons | Adj Rate Low | Adj Rate Mid | Adj Rate High | Cost Low USD | Cost Mid USD | Cost High USD | Pct
+table-row,row,"W-Shapes | 4.62 | $3,850 | $4,400 | $4,950 | $17,787 | $20,328 | $22,869 | 94%"
+table-row,row,"HSS and Tube | 0.02 | $3,850 | $4,400 | $4,950 | $77 | $88 | $99 | 0%"
+table-row,row,"Pipe | 0.00 | $3,850 | $4,400 | $4,950 | $0 | $0 | $0 | 0%"
+table-row,row,"Angles and Channels | 0.00 | $3,850 | $4,400 | $4,950 | $0 | $0 | $0 | 0%"
+table-row,row,"Plates | 0.13 | $3,850 | $4,400 | $4,950 | $501 | $572 | $644 | 3%"
+table-row,row,"Miscellaneous and Embeds | 0.00 | $3,850 | $4,400 | $4,950 | $0 | $0 | $0 | 0%"
+table-row,row,"Bolts and Accessories | 0.14 | $3,850 | $4,400 | $4,950 | $539 | $616 | $693 | 3%"
+table-row,row,"TOTAL | 4.92 | $3,850 | $4,400 | $4,950 | $18,904 | $21,604 | $24,305 | 100%"
+h2,h2,5. PROCESS COST BREAKDOWN — MIDPOINT SCENARIO
+p,p,"--- $21,600 distributed across fabrication process activities at fixed industry-standard percentage allocations."
+table-row,row,Process Activity | Industry Pct | Amount USD | Notes
+table-row,row,"Material — mill sections and plate | 35% | $7,600 | Structural steel mill cost"
+table-row,row,"Shop labour — cut, fit, and weld | 30% | $6,500 | AWS D1.1 weld operations included"
+table-row,row,"Coatings and surface preparation | 12% | $2,600 | SSPC class as specified"
+table-row,row,"Consumables — weld wire, bolts, gas | 6% | $1,300 | Per-ton standard allowance"
+table-row,row,"Equipment — plasma, burn table, drill | 7% | $1,500 | CNC and NC machine time"
+table-row,row,"Overhead and QA/QC | 6% | $1,300 | Inspection, NDT, project management"
+table-row,row,Shop margin | 4% | $800 | Fabricator margin
+table-row,row,"TOTAL | 100% | $21,600 | Midpoint scenario"
+h2,h2,6. COST WATERFALL
+p,p,--- Sequential cost build from LOCK_TONNAGE to final Grand Total at each rate point showing composite adjustment and tax.
+table-row,row,Step | Calculation Detail | Amount USD
+table-row,row,Fabricated tonnage | 4.92 t | —
+table-row,row,"Adjusted mid rate | $4,000 x 1.10 | $4,400 per ton"
+table-row,row,"Base cost at mid rate | 4.92 t x $4,400 | $21,648"
+table-row,row,Tax at 0% | Base cost x 0% | +$0
+table-row,row,"Grand Total — Low ($3,500 base x composite x tax) | — | $18,900"
+table-row,row,"Grand Total — Mid — Headline ($4,000 base x composite x tax) | — | $21,600"
+table-row,row,"Grand Total — High ($4,500 base x composite x tax) | — | $24,400"
+h2,h2,7. COST CONVERSION SUMMARY
+p,p,--- Final locked cost figures for this estimate. Identical to MANIFEST.
+table-row,row,Field | Value
+table-row,row,Fabricated Tonnage | 4.92 t
+table-row,row,Rate Basis | DEFAULT
+table-row,row,"Rate — Low | $3,500 per ton"
+table-row,row,"Rate — Mid | $4,000 per ton"
+table-row,row,"Rate — High | $4,500 per ton"
+table-row,row,Composite Adjustment Factor | x1.10
+table-row,row,"Adjusted Rate — Low | $3,850 per ton"
+table-row,row,"Adjusted Rate — Mid | $4,400 per ton"
+table-row,row,"Adjusted Rate — High | $4,950 per ton"
+table-row,row,Country and Tax | USA at 0%
+table-row,row,"Grand Total — Low (inc. tax) | $18,900"
+table-row,row,"Grand Total — Mid — Headline (inc. tax) | $21,600"
+table-row,row,"Grand Total — High (inc. tax) | $24,400"
+table-row,row,"Cost per Fabricated Ton — Mid | $4,390 per ton"
+h2,h2,8. ASSUMPTIONS AND EXCLUSIONS
+p,p,--- Assumptions applied in this estimate — minimum five items — cite sheets:
+li,li,"Material grade for members taken as ASTM A992, A500, or A36 per General Structural Notes on sheet S0.01. Surface treatment taken as Shop primer only per General Structural Notes on sheet S0.01. Assembly complexity classified as Mixed bolt and weld based on connection types found on sheet S0.02. Composite factor of x1.10 is the product of x1.00 material, x1.00 surface, and x1.10 assembly factors. A 3.00% addition to base steel tonnage applied for bolts and weld accessories as a standard per-ton allowance. Rate band of $3,500 to $4,500 per fabricated ton applied based on current USA market rates for this member type and complexity. Member lengths are estimated from scaled dimensions on framing plan S1.02. Trellis column height estimated at 8'-0"" based on typical section 2/S3.06."
+p,p,Exclusions — not included in this estimate:
+li,li,"Site erection labour, cranes, manlifts, and rigging. Engineer of Record stamping and delegated connection design. Loose anchor bolts cast-in-place by the general contractor. Site touch-up painting following erection. Tax or duties beyond 0% applied in this figure. 3D MEP coordination and cross-trade clash detection. Inflation beyond 30 calendar days from the date of this estimate. All steel lintels (W8x24, W16x50, Angles) and columns (C-marks) listed in schedules on S0.02, as quantities and locations are not defined on plans. All HSS members (HSS18x6x3/8, HSS9x5x3/8, HSS8x6x3/8) for which the profile is not listed in the provided AISC Unit Weight Reference table."
+p,p,Conditions that produce a revised estimate:
+li,li,Tonnage change exceeding plus or minus 5% from this figure. Change of coating system such as from shop primer to hot-dip galvanised. Addition of member categories not in the current drawing set. Profile size changes affecting more than 10% of total tonnage.
+h2,h2,10. ESTIMATE SUMMARY
+p,p,"--- The total fabricated tonnage for this estimate is 4.92 metric tons, with a headline cost of $21,600 USD based on the midpoint rate and including a composite adjustment factor of x1.10 and 0% tax. W-shape beams comprise the largest portion of the total tonnage. The estimate is based on the default rate band of $3,500 to $4,500 per fabricated ton. The scope of this estimate explicitly excludes all steel lintels and columns shown only in schedules, site erection labor, delegated connection design, and all HSS profiles not found in the provided unit weight table. A revised estimate will be produced if the total tonnage changes by more than 5% or if the specified coating system is altered."

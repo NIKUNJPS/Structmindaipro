@@ -124,11 +124,6 @@ export default function Outputs() {
                                         View <ArrowRight size={12} />
                                     </Link>
                                 </div>
-                                <div className="mt-4 flex flex-wrap gap-4 border-y border-ink-line py-3 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
-                                    <span>Model: <span className="text-navy">{o.model_used || "—"}</span></span>
-                                    <span>Score: <span className="text-navy">{Math.round(o.quality_score || 0)}%</span></span>
-                                    <span>Issues: <span className="text-destructive">{o.issues_found?.critical || 0}C</span>/<span className="text-warning">{o.issues_found?.major || 0}M</span>/<span className="text-success">{o.issues_found?.minor || 0}m</span></span>
-                                </div>
                                 <div className="mt-4 flex flex-wrap gap-2">
                                     {EXPORTS.map((e) => (
                                         <button

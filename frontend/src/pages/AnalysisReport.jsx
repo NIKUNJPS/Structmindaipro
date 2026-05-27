@@ -1,13 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-    Activity,
     AlertOctagon,
-    CheckCircle2,
     ChevronRight,
     Download,
-    FileIcon,
-    Gauge,
     MessageSquarePlus,
     RotateCw,
     Sparkles,
@@ -380,16 +376,8 @@ export default function AnalysisReport() {
 
             {analysis.status === "complete" && (
                 <div className="container-steel py-10">
-                    {/* Top meta */}
-                    <div className="grid gap-6 md:grid-cols-4">
-                        <Metric label="Critical" value={analysis.issues_found?.critical ?? 0} color="text-destructive" icon={AlertOctagon} />
-                        <Metric label="Major" value={analysis.issues_found?.major ?? 0} color="text-warning" icon={AlertOctagon} />
-                        <Metric label="Minor" value={analysis.issues_found?.minor ?? 0} color="text-success" icon={CheckCircle2} />
-                        <Metric label="Quality" value={`${Math.round(analysis.quality_score || 0)}%`} color="text-navy" icon={Gauge} />
-                    </div>
-
                     {/* Exports + Blockchain */}
-                    <div className="mt-6 card-steel p-6">
+                    <div className="card-steel p-6">
                         <div className="flex flex-wrap items-center justify-between gap-4">
                             <div>
                                 <div className="text-overline">Exports</div>
@@ -543,24 +531,6 @@ export default function AnalysisReport() {
                     </div>
                 </div>
             )}
-        </div>
-    );
-}
-
-function Metric({ label, value, color, icon: Icon }) {
-    return (
-        <div className="card-steel p-5">
-            <div className="flex items-start justify-between">
-                <div>
-                    <div className="font-mono text-[10px] uppercase tracking-wider text-ink-muted">
-                        {label}
-                    </div>
-                    <div className={`mt-2 font-heading text-4xl font-black leading-none ${color}`}>
-                        {value}
-                    </div>
-                </div>
-                <Icon size={18} className={color} />
-            </div>
         </div>
     );
 }

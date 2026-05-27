@@ -37,7 +37,6 @@ const NAV = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/projects", label: "Projects", icon: FolderKanban },
     { to: "/analyze", label: "Analyze", icon: Sparkles, accent: true },
-    { to: "/estimate", label: "Estimation", icon: Calculator },
     { to: "/rfi-tracker", label: "RFI Tracker", icon: MessageSquareQuote },
     { to: "/outputs", label: "Outputs", icon: Download },
 ];
