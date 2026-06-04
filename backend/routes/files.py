@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import logging
 import mimetypes
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,7 +19,6 @@ from middleware.permission_guard import (
 )
 from security import block_write_if_readonly, get_current_user, sha256_hex
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 ALLOWED_EXT = {
@@ -29,87 +27,9 @@ ALLOWED_EXT = {
 }
 CHUNK = 1024 * 1024  # 1 MB
 
-# PDFs over this size get optimized to reduce token usage in Gemini
-PDF_OPTIMIZE_THRESHOLD_MB = 10.0
-
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _optimize_pdf(src: Path, dest: Path) -> bool:
-    """
-    Optimize a PDF to reduce file size before storage.
-    Strips metadata, compresses streams, removes embedded thumbnails.
-    Returns True if optimization succeeded and dest is smaller, else False.
-    Uses pikepdf if available, falls back to pypdf.
-    """
-    original_size = src.stat().st_size
-
-    # Try pikepdf first (better compression)
-    try:
-        import pikepdf
-        with pikepdf.open(src) as pdf:
-            # Remove metadata to save space
-            with pdf.open_metadata() as meta:
-                meta.clear()
-            pdf.save(
-                dest,
-                compress_streams=True,
-                object_stream_mode=pikepdf.ObjectStreamMode.generate,
-                recompress_flate=True,
-                preserve_pdfa=False,
-            )
-        optimized_size = dest.stat().st_size
-        saved_mb = (original_size - optimized_size) / (1024 * 1024)
-        ratio = (1 - optimized_size / original_size) * 100
-        logger.info(
-            "PDF optimized via pikepdf: %.1f MB → %.1f MB (%.0f%% reduction)",
-            original_size / (1024 * 1024),
-            optimized_size / (1024 * 1024),
-            ratio,
-        )
-        # Only use optimized if it's actually smaller
-        if optimized_size < original_size:
-            return True
-        dest.unlink(missing_ok=True)
-        return False
-    except ImportError:
-        pass
-    except Exception as e:
-        logger.warning("pikepdf optimization failed: %s", e)
-        dest.unlink(missing_ok=True)
-
-    # Fallback: pypdf
-    try:
-        from pypdf import PdfReader, PdfWriter
-        reader = PdfReader(str(src))
-        writer = PdfWriter()
-        for page in reader.pages:
-            page.compress_content_streams()
-            writer.add_page(page)
-        writer.add_metadata({})
-        with open(dest, "wb") as f:
-            writer.write(f)
-        optimized_size = dest.stat().st_size
-        ratio = (1 - optimized_size / original_size) * 100
-        logger.info(
-            "PDF optimized via pypdf: %.1f MB → %.1f MB (%.0f%% reduction)",
-            original_size / (1024 * 1024),
-            optimized_size / (1024 * 1024),
-            ratio,
-        )
-        if optimized_size < original_size:
-            return True
-        dest.unlink(missing_ok=True)
-        return False
-    except ImportError:
-        logger.warning("Neither pikepdf nor pypdf available — skipping PDF optimization")
-        return False
-    except Exception as e:
-        logger.warning("pypdf optimization failed: %s", e)
-        dest.unlink(missing_ok=True)
-        return False
 
 
 @router.post("/upload")
@@ -153,29 +73,9 @@ async def upload_file(
                 )
             sha.update(buf)
             out.write(buf)
-
     file_hash = sha.hexdigest()
     size_mb = round(size / (1024 * 1024), 2)
-    check_file_size(perms, size_mb)
-
-    # Optimize PDFs over threshold to reduce Gemini token usage
-    if ext == ".pdf" and size_mb >= PDF_OPTIMIZE_THRESHOLD_MB:
-        optimized_path = dest.with_suffix(".opt.pdf")
-        try:
-            success = _optimize_pdf(dest, optimized_path)
-            if success and optimized_path.exists():
-                # Replace original with optimized version
-                dest.unlink(missing_ok=True)
-                optimized_path.rename(dest)
-                new_size = dest.stat().st_size
-                size_mb = round(new_size / (1024 * 1024), 2)
-                logger.info("Stored optimized PDF: %s (%.1f MB)", storage_name, size_mb)
-            else:
-                optimized_path.unlink(missing_ok=True)
-        except Exception as e:
-            logger.warning("PDF optimization step failed, keeping original: %s", e)
-            optimized_path.unlink(missing_ok=True)
-
+    check_file_size(perms, size_mb)  # double-check post-write
     mime = file.content_type or mimetypes.guess_type(file.filename or "")[0] or "application/octet-stream"
 
     # Project access check
