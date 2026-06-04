@@ -172,7 +172,7 @@ USER INPUT:
                 contents=contents,
                 config=types.GenerateContentConfig(
                     temperature=0.1,
-                    max_output_tokens=8192,
+                    max_output_tokens=65536,
                 ),
             )
 
