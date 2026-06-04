@@ -1,132 +1,201 @@
-"""Email service. Uses SMTP if configured, else logs to console for dev."""
+"""LLM service using google.genai with service account authentication."""
 from __future__ import annotations
 
+import json
 import logging
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import os
+import time
+from typing import Iterable
+
+import google.genai as genai
+from google.genai import types
+from google.oauth2 import service_account
+from google.auth.transport.requests import Request
 
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-BRAND_NAVY = "#0d2240"
-BRAND_GOLD = "#f5a800"
+MODEL_CHAIN: list[str] = [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+]
+
+ENGINE_LABELS: dict[str, str] = {
+    "gemini-2.5-pro":   "STRUCTMIND CORE · PRO",
+    "gemini-2.5-flash": "STRUCTMIND CORE · FAST",
+    "gemini-2.0-flash": "STRUCTMIND CORE · LITE",
+}
 
 
-def _html_wrap(title: str, body_html: str) -> str:
-    return f"""<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>{title}</title></head>
-<body style="margin:0;padding:0;background:#f7f9fc;font-family:'IBM Plex Sans',Arial,sans-serif;color:#1a2d44">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f9fc;padding:32px 16px">
-    <tr><td align="center">
-      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2eaf2">
-        <tr>
-          <td style="background:{BRAND_NAVY};padding:28px 32px">
-            <div style="font-family:'Barlow Condensed',Arial,sans-serif;font-weight:700;font-size:22px;letter-spacing:2px;color:#ffffff">
-              4<span style="color:{BRAND_GOLD}">X</span>STRUCT · STRUCTMIND AI
-            </div>
-          </td>
-        </tr>
-        <tr><td style="padding:32px">{body_html}</td></tr>
-        <tr><td style="padding:24px 32px;background:#f7f9fc;border-top:1px solid #e2eaf2;font-size:12px;color:#6b8299">
-          Powered by 4XStruct Inc. · Structural Intelligence · STRUCTMIND CORE engine<br/>
-          If you did not request this email, you can safely ignore it.
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>"""
+def engine_label(internal_model: str) -> str:
+    return ENGINE_LABELS.get(internal_model, "STRUCTMIND CORE")
 
 
-def render_otp_email(first_name: str, otp: str, purpose: str) -> tuple[str, str, str]:
-    subject_map = {
-        "signup": "Verify your StructMind AI account",
-        "login": "Your StructMind AI login code",
-        "reset": "Reset your StructMind AI password",
-        "change": "Confirm your password change",
-    }
-    subject = subject_map.get(purpose, "Your StructMind AI verification code")
-    title_map = {
-        "signup": "Verify your email",
-        "login": "Confirm your sign-in",
-        "reset": "Reset your password",
-        "change": "Confirm password change",
-    }
-    title = title_map.get(purpose, "Your verification code")
-    body = f"""
-<h1 style="font-family:'Barlow Condensed',Arial,sans-serif;font-size:28px;letter-spacing:-0.5px;margin:0 0 8px;color:{BRAND_NAVY};text-transform:uppercase">{title}</h1>
-<p style="font-size:15px;line-height:1.6;margin:0 0 20px">Hi {first_name or 'there'},</p>
-<p style="font-size:15px;line-height:1.6;margin:0 0 20px">Use the 6-digit code below to continue. This code expires in {settings.otp_expiry_seconds // 60} minutes.</p>
-<div style="margin:24px 0;padding:24px;background:{BRAND_NAVY};text-align:center">
-  <div style="font-family:'JetBrains Mono',Consolas,monospace;font-size:40px;font-weight:700;letter-spacing:14px;color:{BRAND_GOLD}">{otp}</div>
-</div>
-<p style="font-size:13px;color:#6b8299;margin:0">For your security, never share this code. 4XStruct will never ask for it.</p>
-"""
-    text = f"Your StructMind AI {purpose} code is: {otp}\nThis code expires in {settings.otp_expiry_seconds // 60} minutes."
-    return subject, _html_wrap(subject, body), text
-
-
-def render_password_changed_email(first_name: str) -> tuple[str, str, str]:
-    subject = "Your StructMind AI password has been changed"
-    body = f"""
-<h1 style="font-family:'Barlow Condensed',Arial,sans-serif;font-size:28px;letter-spacing:-0.5px;margin:0 0 8px;color:{BRAND_NAVY};text-transform:uppercase">Password updated</h1>
-<p style="font-size:15px;line-height:1.6;margin:0 0 16px">Hi {first_name or 'there'},</p>
-<p style="font-size:15px;line-height:1.6;margin:0 0 16px">Your StructMind AI password was just changed. All your previous sessions have been signed out.</p>
-<p style="font-size:13px;color:#6b8299">If this wasn't you, please contact support immediately.</p>
-"""
-    return subject, _html_wrap(subject, body), "Your StructMind AI password has been changed."
-
-
-def render_analysis_complete_email(first_name: str, mode_label: str, project_name: str, action_url: str) -> tuple[str, str, str]:
-    subject = f"Analysis complete · {mode_label}"
-    body = f"""
-<h1 style="font-family:'Barlow Condensed',Arial,sans-serif;font-size:28px;letter-spacing:-0.5px;margin:0 0 8px;color:{BRAND_NAVY};text-transform:uppercase">Analysis complete</h1>
-<p style="font-size:15px;line-height:1.6;margin:0 0 20px">Hi {first_name or 'there'},</p>
-<p style="font-size:15px;line-height:1.6;margin:0 0 20px"><strong>{mode_label}</strong> for project <strong>{project_name}</strong> is ready to review.</p>
-<a href="{action_url}" style="display:inline-block;background:{BRAND_GOLD};color:{BRAND_NAVY};padding:14px 28px;text-decoration:none;font-family:'Barlow Condensed',Arial,sans-serif;font-weight:700;letter-spacing:1px;text-transform:uppercase">Open report →</a>
-"""
-    return subject, _html_wrap(subject, body), f"Analysis complete: {mode_label} for {project_name}. Open: {action_url}"
-
-
-def send_email(to: str, subject: str, html: str, text: str) -> bool:
-    """Send email via SMTP or fall back to console logging in dev."""
-    if not (settings.smtp_host and settings.smtp_user and settings.smtp_pass):
-        logger.info(
-            "\n[DEV EMAIL — SMTP not configured] ------\n"
-            "To: %s\nSubject: %s\nText:\n%s\n---------------------------------------\n",
-            to,
-            subject,
-            text,
-        )
-        return True
-
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f"{settings.smtp_from_name} <{settings.smtp_from or settings.smtp_user}>"
-        msg["To"] = to
-        msg.attach(MIMEText(text, "plain"))
-        msg.attach(MIMEText(html, "html"))
-
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as s:
-            s.starttls()
-            s.login(settings.smtp_user, settings.smtp_pass)
-            s.sendmail(
-                settings.smtp_from or settings.smtp_user, [to], msg.as_string()
+def _get_credentials():
+    """Get fresh service account credentials."""
+    sa_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if sa_json:
+        try:
+            sa_info = json.loads(sa_json)
+            credentials = service_account.Credentials.from_service_account_info(
+                sa_info,
+                scopes=["https://www.googleapis.com/auth/generative-language"],
             )
-        logger.info("Email sent to %s · %s", to, subject)
-        return True
-    except Exception as e:
-        logger.error("SMTP send failed to %s: %s", to, e)
-        # Fallback: log to console so OTP is still recoverable in dev
-        logger.info(
-            "\n[DEV EMAIL FALLBACK after SMTP error] ------\n"
-            "To: %s\nSubject: %s\nText:\n%s\n---------------------------------------\n",
-            to,
-            subject,
-            text,
-        )
-        return False
+            credentials.refresh(Request())
+            logger.info("Service account credentials refreshed successfully")
+            return credentials
+        except Exception as e:
+            logger.warning("Service account auth failed: %s", e)
+    return None
+
+
+def _get_client() -> genai.Client:
+    """Get authenticated Gemini client."""
+    credentials = _get_credentials()
+    if credentials:
+        logger.info("Gemini client created with service account")
+        return genai.Client(credentials=credentials)
+    if settings.llm_key:
+        logger.info("Gemini client created with API key")
+        return genai.Client(api_key=settings.llm_key)
+    raise RuntimeError("No Gemini credentials configured")
+
+
+def _upload_files_to_gemini(
+    client: genai.Client,
+    file_paths: list[tuple[str, str]],
+) -> list:
+    """
+    Upload files to Gemini Files API.
+    Returns list of uploaded file references.
+    Large files are uploaded to Google servers — no RAM spike.
+    """
+    uploaded = []
+    for file_path, mime_type in file_paths:
+        if not os.path.exists(file_path):
+            logger.warning("File not found, skipping: %s", file_path)
+            continue
+        file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+        logger.info("Uploading file %s (%.1f MB) to Gemini Files API", file_path, file_size_mb)
+        try:
+            uploaded_file = client.files.upload(
+                path=file_path,
+                config=types.UploadFileConfig(mime_type=mime_type),
+            )
+            # Wait for file to be processed
+            max_wait = 60
+            waited = 0
+            while waited < max_wait:
+                file_info = client.files.get(name=uploaded_file.name)
+                if file_info.state.name == "ACTIVE":
+                    logger.info("File %s is ready", uploaded_file.name)
+                    uploaded.append(file_info)
+                    break
+                elif file_info.state.name == "FAILED":
+                    logger.error("File processing failed: %s", uploaded_file.name)
+                    break
+                time.sleep(2)
+                waited += 2
+            else:
+                logger.warning("File %s timed out waiting for processing", uploaded_file.name)
+        except Exception as e:
+            logger.warning("File upload failed for %s: %s", file_path, e)
+    return uploaded
+
+
+def _cleanup_files(client: genai.Client, uploaded_files: list) -> None:
+    """Delete uploaded files from Gemini Files API after use."""
+    for f in uploaded_files:
+        try:
+            client.files.delete(name=f.name)
+            logger.info("Deleted Gemini file: %s", f.name)
+        except Exception as e:
+            logger.warning("Could not delete Gemini file %s: %s", f.name, e)
+
+
+async def run_analysis(
+    *,
+    session_id: str,
+    system_prompt: str,
+    user_text: str,
+    file_paths: Iterable[tuple[str, str]] = (),
+) -> tuple[str, str]:
+    """
+    Execute Gemini call with fallback chain.
+    file_paths: iterable of (absolute_path, mime_type)
+    Returns: (output_markdown, engine_display_label)
+    """
+    last_err: Exception | None = None
+    file_paths_list = list(file_paths)
+
+    prompt = f"""SYSTEM PROMPT:
+{system_prompt}
+
+USER INPUT:
+{user_text}
+"""
+
+    for model_name in MODEL_CHAIN:
+        uploaded_files = []
+        try:
+            logger.info(
+                "STRUCTMIND CORE LLM call · tier=%s · session=%s",
+                model_name,
+                session_id,
+            )
+
+            # Fresh client per call (handles token expiry)
+            client = _get_client()
+
+            # Upload files to Gemini Files API (memory efficient)
+            if file_paths_list:
+                uploaded_files = _upload_files_to_gemini(client, file_paths_list)
+
+            # Build contents
+            if uploaded_files:
+                contents = [prompt] + uploaded_files
+            else:
+                contents = [prompt]
+                if file_paths_list:
+                    logger.warning(
+                        "No files uploaded successfully for session %s — running text-only",
+                        session_id,
+                    )
+
+            # Generate response
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    max_output_tokens=8192,
+                ),
+            )
+
+            if response and response.text and response.text.strip():
+                logger.info(
+                    "Analysis complete · tier=%s · session=%s",
+                    model_name,
+                    session_id,
+                )
+                return response.text, engine_label(model_name)
+
+            raise RuntimeError("Empty response received from model")
+
+        except Exception as e:
+            last_err = e
+            logger.warning("Engine tier %s failed: %s", model_name, e)
+            continue
+
+        finally:
+            # Always cleanup uploaded files
+            if uploaded_files:
+                try:
+                    _cleanup_files(client, uploaded_files)
+                except Exception:
+                    pass
+
+    raise RuntimeError(
+        f"All STRUCTMIND CORE tiers failed. Last error: {last_err}"
+    )
