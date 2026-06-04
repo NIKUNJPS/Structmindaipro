@@ -27,6 +27,10 @@ ENGINE_LABELS: dict[str, str] = {
     "gemini-2.0-flash": "STRUCTMIND CORE · LITE",
 }
 
+# Gemini safe limits — stay well under the context window
+MAX_BATCH_MB = 45.0      # max total MB per Gemini request
+MAX_FILES_PER_BATCH = 6  # max files per Gemini request
+
 
 def engine_label(internal_model: str) -> str:
     return ENGINE_LABELS.get(internal_model, "STRUCTMIND CORE")
@@ -63,14 +67,58 @@ def _get_client() -> genai.Client:
     raise RuntimeError("No Gemini credentials configured")
 
 
+def _build_batches(
+    file_paths: list[tuple[str, str]],
+) -> list[list[tuple[str, str]]]:
+    """
+    Split file_paths into batches that each stay under MAX_BATCH_MB and
+    MAX_FILES_PER_BATCH. Largest files first so we don't waste slots on
+    small files after a large one already fills the batch.
+    """
+    # Sort largest first so big files open their own batch
+    sorted_files = sorted(
+        file_paths,
+        key=lambda x: os.path.getsize(x[0]) if os.path.exists(x[0]) else 0,
+        reverse=True,
+    )
+
+    batches: list[list[tuple[str, str]]] = []
+    batch_sizes: list[float] = []
+
+    for fp, mime in sorted_files:
+        if not os.path.exists(fp):
+            logger.warning("File not found, skipping: %s", fp)
+            continue
+        size_mb = os.path.getsize(fp) / (1024 * 1024)
+
+        placed = False
+        for i, batch in enumerate(batches):
+            if (
+                len(batch) < MAX_FILES_PER_BATCH
+                and batch_sizes[i] + size_mb <= MAX_BATCH_MB
+            ):
+                batch.append((fp, mime))
+                batch_sizes[i] += size_mb
+                placed = True
+                break
+
+        if not placed:
+            batches.append([(fp, mime)])
+            batch_sizes.append(size_mb)
+
+    for i, (batch, sz) in enumerate(zip(batches, batch_sizes)):
+        logger.info(
+            "Batch %d/%d: %d files, %.1f MB",
+            i + 1, len(batches), len(batch), sz,
+        )
+    return batches
+
+
 def _upload_files_to_gemini(
     client: genai.Client,
     file_paths: list[tuple[str, str]],
 ) -> list:
-    """
-    Upload files to Gemini Files API using file object (not path).
-    Memory efficient — files go to Google servers, not RAM.
-    """
+    """Upload files to Gemini Files API. Memory efficient — streamed to Google."""
     uploaded = []
     for file_path, mime_type in file_paths:
         if not os.path.exists(file_path):
@@ -85,7 +133,6 @@ def _upload_files_to_gemini(
                     config=types.UploadFileConfig(mime_type=mime_type),
                 )
 
-            # Poll until ACTIVE
             max_wait = 120
             waited = 0
             while waited < max_wait:
@@ -121,6 +168,77 @@ def _cleanup_files(client: genai.Client, uploaded_files: list) -> None:
             logger.warning("Could not delete file %s: %s", f.name, e)
 
 
+async def _run_single_batch(
+    *,
+    client: genai.Client,
+    model_name: str,
+    system_prompt: str,
+    user_text: str,
+    batch_files: list[tuple[str, str]],
+    batch_num: int,
+    total_batches: int,
+    session_id: str,
+) -> str:
+    """Run one Gemini request for a single batch of files. Returns text output."""
+    uploaded_files = []
+    try:
+        if batch_files:
+            uploaded_files = _upload_files_to_gemini(client, batch_files)
+
+        batch_user_text = user_text
+        if total_batches > 1:
+            batch_user_text = (
+                f"[Batch {batch_num} of {total_batches}]\n\n"
+                f"{user_text}\n\n"
+                f"Note: You are analysing file batch {batch_num} of {total_batches}. "
+                f"Analyse only the files in this batch thoroughly."
+            )
+
+        parts: list[types.Part] = [types.Part(text=batch_user_text)]
+        for f in uploaded_files:
+            parts.append(
+                types.Part(
+                    file_data=types.FileData(
+                        file_uri=f.uri,
+                        mime_type=f.mime_type,
+                    )
+                )
+            )
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=[types.Content(role="user", parts=parts)],
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=0.1,
+                max_output_tokens=8192,
+            ),
+        )
+
+        if response and response.text and response.text.strip():
+            return response.text.strip()
+
+        raise RuntimeError("Empty response from model")
+
+    finally:
+        if uploaded_files and client:
+            try:
+                _cleanup_files(client, uploaded_files)
+            except Exception:
+                pass
+
+
+def _merge_batch_outputs(outputs: list[str], total_batches: int) -> str:
+    """Merge multiple batch outputs into one coherent report."""
+    if len(outputs) == 1:
+        return outputs[0]
+
+    merged = f"# COMBINED ANALYSIS REPORT ({total_batches} file batches)\n\n"
+    for i, out in enumerate(outputs, 1):
+        merged += f"\n\n---\n## BATCH {i} OF {total_batches}\n\n{out}"
+    return merged
+
+
 async def run_analysis(
     *,
     session_id: str,
@@ -129,80 +247,62 @@ async def run_analysis(
     file_paths: Iterable[tuple[str, str]] = (),
 ) -> tuple[str, str]:
     """
-    Execute Gemini call with fallback chain.
-    file_paths: iterable of (absolute_path, mime_type)
+    Execute Gemini call with batching + fallback chain.
+    Large file sets are split into safe-sized batches and results merged.
     Returns: (output_markdown, engine_display_label)
     """
     last_err: Exception | None = None
     file_paths_list = list(file_paths)
 
+    # Build batches upfront (same batches reused across model fallbacks)
+    if file_paths_list:
+        batches = _build_batches(file_paths_list)
+    else:
+        batches = [[]]  # text-only: one empty batch
+
+    logger.info(
+        "session=%s total_files=%d total_batches=%d",
+        session_id, len(file_paths_list), len(batches),
+    )
+
     for model_name in MODEL_CHAIN:
-        uploaded_files = []
-        client = None
         try:
             logger.info(
-                "STRUCTMIND CORE LLM call · tier=%s · session=%s",
-                model_name,
-                session_id,
+                "STRUCTMIND CORE LLM call · tier=%s · session=%s · batches=%d",
+                model_name, session_id, len(batches),
             )
-
             client = _get_client()
+            batch_outputs: list[str] = []
 
-            # Upload files to Gemini Files API
-            if file_paths_list:
-                uploaded_files = _upload_files_to_gemini(client, file_paths_list)
-                if not uploaded_files:
-                    logger.warning(
-                        "No files uploaded for session %s — running text-only",
-                        session_id,
-                    )
-
-            # Build user parts: text first, then file references
-            parts: list[types.Part] = [types.Part(text=user_text)]
-            for f in uploaded_files:
-                parts.append(
-                    types.Part(
-                        file_data=types.FileData(
-                            file_uri=f.uri,
-                            mime_type=f.mime_type,
-                        )
-                    )
-                )
-
-            # system_prompt goes in system_instruction (NOT in contents)
-            # This is the correct Gemini API structure and avoids 400 errors
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[types.Content(role="user", parts=parts)],
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    temperature=0.1,
-                    max_output_tokens=8192,
-                ),
-            )
-
-            if response and response.text and response.text.strip():
+            for i, batch in enumerate(batches, 1):
                 logger.info(
-                    "Analysis complete · tier=%s · session=%s",
-                    model_name,
-                    session_id,
+                    "Processing batch %d/%d · tier=%s · session=%s",
+                    i, len(batches), model_name, session_id,
                 )
-                return response.text, engine_label(model_name)
+                output = await _run_single_batch(
+                    client=client,
+                    model_name=model_name,
+                    system_prompt=system_prompt,
+                    user_text=user_text,
+                    batch_files=batch,
+                    batch_num=i,
+                    total_batches=len(batches),
+                    session_id=session_id,
+                )
+                batch_outputs.append(output)
 
-            raise RuntimeError("Empty response from model")
+            final_output = _merge_batch_outputs(batch_outputs, len(batches))
+
+            logger.info(
+                "Analysis complete · tier=%s · session=%s · batches=%d",
+                model_name, session_id, len(batches),
+            )
+            return final_output, engine_label(model_name)
 
         except Exception as e:
             last_err = e
             logger.warning("Engine tier %s failed: %s", model_name, e)
             continue
-
-        finally:
-            # Always cleanup uploaded files from Gemini
-            if uploaded_files and client:
-                try:
-                    _cleanup_files(client, uploaded_files)
-                except Exception:
-                    pass
 
     raise RuntimeError(
         f"All STRUCTMIND CORE tiers failed. Last error: {last_err}"
