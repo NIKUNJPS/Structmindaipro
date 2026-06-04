@@ -163,8 +163,23 @@ USER INPUT:
                         session_id,
                     )
 
-            # Build contents
-            contents = [prompt] + uploaded_files if uploaded_files else [prompt]
+            # ----------------------------------------------------------------
+            # FIX: Build properly structured Part objects instead of mixing
+            # raw strings and File objects in the contents list, which causes
+            # 400 INVALID_ARGUMENT from the Gemini API.
+            # ----------------------------------------------------------------
+            parts = [types.Part(text=prompt)]
+            for f in uploaded_files:
+                parts.append(
+                    types.Part(
+                        file_data=types.FileData(
+                            file_uri=f.uri,
+                            mime_type=f.mime_type,
+                        )
+                    )
+                )
+
+            contents = [types.Content(role="user", parts=parts)]
 
             # Generate
             response = client.models.generate_content(
