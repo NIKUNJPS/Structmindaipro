@@ -136,12 +136,6 @@ async def run_analysis(
     last_err: Exception | None = None
     file_paths_list = list(file_paths)
 
-    prompt = f"""SYSTEM PROMPT:
-{system_prompt}
-
-USER INPUT:
-{user_text}
-"""
     for model_name in MODEL_CHAIN:
         uploaded_files = []
         client = None
@@ -163,12 +157,8 @@ USER INPUT:
                         session_id,
                     )
 
-            # ----------------------------------------------------------------
-            # FIX: Build properly structured Part objects instead of mixing
-            # raw strings and File objects in the contents list, which causes
-            # 400 INVALID_ARGUMENT from the Gemini API.
-            # ----------------------------------------------------------------
-            parts = [types.Part(text=prompt)]
+            # Build user parts: text first, then file references
+            parts: list[types.Part] = [types.Part(text=user_text)]
             for f in uploaded_files:
                 parts.append(
                     types.Part(
@@ -179,13 +169,13 @@ USER INPUT:
                     )
                 )
 
-            contents = [types.Content(role="user", parts=parts)]
-
-            # Generate
+            # system_prompt goes in system_instruction (NOT in contents)
+            # This is the correct Gemini API structure and avoids 400 errors
             response = client.models.generate_content(
                 model=model_name,
-                contents=contents,
+                contents=[types.Content(role="user", parts=parts)],
                 config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
                     temperature=0.1,
                     max_output_tokens=8192,
                 ),
