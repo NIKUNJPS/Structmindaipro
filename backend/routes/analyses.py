@@ -6,6 +6,7 @@ for granular feature gating (mode access, monthly cap, export format, file size,
 from __future__ import annotations
 
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -86,10 +87,15 @@ async def _run_analysis_task(analysis_id: str):
                 file_pairs.append((str(path), mt))
 
     try:
-        if not settings.llm_key:
+        # Support both service account (GOOGLE_SERVICE_ACCOUNT_JSON) and API key (llm_key)
+        has_service_account = bool(os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON"))
+        has_api_key = bool(settings.llm_key)
+        if not has_service_account and not has_api_key:
             raise RuntimeError(
-                "No LLM key configured. Set GEMINI_API_KEY or EMERGENT_LLM_KEY in /app/backend/.env"
+                "No LLM credentials configured. "
+                "Set GOOGLE_SERVICE_ACCOUNT_JSON or GEMINI_API_KEY in environment."
             )
+
         requester = await db.users.find_one(
             {"id": analysis["requested_by"]}, {"_id": 0, "role": 1}
         )
