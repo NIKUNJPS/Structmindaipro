@@ -85,7 +85,7 @@ export default function Login() {
                                     25
                                 </div>
                                 <div className="font-mono text-[10px] uppercase tracking-wider text-white/60">
-                                    AI Modes
+                                    Modes
                                 </div>
                             </div>
                             <div className="px-4 py-5">

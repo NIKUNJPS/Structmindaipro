@@ -12,7 +12,7 @@ export function ProtectedRoute({ children }) {
                 className="flex h-screen items-center justify-center bg-navy text-white"
             >
                 <div className="font-mono text-xs uppercase tracking-[0.3em] text-gold">
-                    STRUCTMIND AI · LOADING
+                    STRUCTMIND · LOADING
                 </div>
             </div>
         );

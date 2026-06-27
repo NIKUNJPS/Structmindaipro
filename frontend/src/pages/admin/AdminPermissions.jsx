@@ -275,7 +275,7 @@ export function AdminPermissionEditor() {
             </Section>
 
             {/* MODES */}
-            <Section title={`AI modes (${user.role})`} wide className="mt-6">
+            <Section title={`Analysis modes (${user.role})`} wide className="mt-6">
                 {modesForRole.length === 0 ? (
                     <div className="text-sm text-ink-muted">
                         No modes are defined yet for the {user.role} role. Add modes in

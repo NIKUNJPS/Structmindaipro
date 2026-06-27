@@ -13,15 +13,10 @@ import logging
 import re
 from typing import Iterable
 
-from google import genai
-
 from config import settings
-from gemini_service import MODEL_CHAIN, engine_label
+from gemini_service import MODEL_CHAIN, engine_label, _get_client
 
 logger = logging.getLogger(__name__)
-
-# Gemini Client
-client = genai.Client(api_key=settings.llm_key)
 
 # ─────────────────────────────────────────────────────────────
 # PROMPTS
@@ -30,18 +25,31 @@ client = genai.Client(api_key=settings.llm_key)
 FABRICATOR_EXTRACT_PROMPT = """
 You are STRUCTMIND CORE, a senior structural-steel fabricator's estimator.
 
-Your ONLY task:
-Read the attached structural drawings, BOM, or schedule and extract the total fabricated tonnage required for the scope.
+Your task: read EVERY attached structural drawing, BOM, schedule and document and
+compute the total fabricated tonnage with a disciplined member-by-member take-off.
 
-Return ONLY valid JSON.
+METHOD (perform internally, do not narrate):
+  1. Scan every sheet and every document. Use the BOM / member schedule where present;
+     otherwise quantify members from framing plans and details.
+  2. For each member: identify profile, quantity and length, then apply the published
+     AISC / standard unit weight (kg/m) for that profile. Plates and bars: compute from
+     volume × 7,850 kg/m³. Convert all weights to metric tons.
+  3. Add a 3.0% allowance for bolts, welds, connection plates and accessories.
+  4. SUM every member. Do not sample, round members away, or estimate a bulk figure —
+     the tonnage must be the sum of the actual take-off.
+  5. Be exhaustive: include secondary steel, miscellaneous, embeds and anchors.
+
+Round the final tonnage to exactly two decimal places.
+
+Return ONLY valid JSON (no markdown, no commentary):
 
 {
-  "tonnage": 184.5,
+  "tonnage": 184.52,
   "members_counted": 250,
   "primary_material": "A992 W-shapes",
   "drawings_seen": 12,
-  "confidence": "high",
-  "notes": "Estimated using BOM and steel member schedules"
+  "accessory_allowance_pct": 3.0,
+  "notes": "Member-by-member take-off from BOM and framing plans; AISC unit weights applied."
 }
 """
 
@@ -49,11 +57,22 @@ DETAILER_EXTRACT_PROMPT = """
 You are STRUCTMIND CORE, a senior structural-steel detailing lead.
 
 Your ONLY task:
-Read the attached structural drawings and quantify the detailing workload.
+Read the attached structural drawings and estimate the detailing workload in HOURS.
+
+Estimate total_hours as the realistic effort for a competent detailer to produce
+the full fabrication-ready model and shop drawings for this scope, including:
+  - production/shop drawings (modelling + drawing time),
+  - connection detailing,
+  - checking/QC, and
+  - a reasonable revision allowance.
+
+Use the drawing count, connection count and complexity to derive total_hours.
+A typical band is 1.5-8 hours per production drawing depending on complexity.
 
 Return ONLY valid JSON.
 
 {
+  "total_hours": 540.0,
   "drawings": 120,
   "connections": 450,
   "complexity": "High",
@@ -139,6 +158,7 @@ No extra text.
 """
 
     last_err: Exception | None = None
+    client = _get_client()  # service-account or API-key aware; created on demand
 
     for model_name in MODEL_CHAIN:
 

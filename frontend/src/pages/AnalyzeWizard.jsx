@@ -249,7 +249,7 @@ export default function AnalyzeWizard() {
                                     No analysis modes enabled
                                 </div>
                                 <div className="mt-2 text-sm text-ink-muted">
-                                    Your super admin has not yet enabled any AI modes for your account.
+                                    Your super admin has not yet enabled any analysis modes for your account.
                                     Contact them to unlock the modes you need.
                                 </div>
                             </div>

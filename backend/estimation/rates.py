@@ -6,7 +6,7 @@ Internal "cost" rates are tracked separately in USD as a global benchmark — ne
 from __future__ import annotations
 
 # Internal global cost basis (hidden — only estimator/admin sees these)
-INTERNAL_DETAILER_COST_USD = (20.0, 27.0)            # USD/hr — outsourced detailing cost basis
+INTERNAL_DETAILER_COST_USD = (18.0, 25.0)            # USD/hr — detailing cost basis (estimate anchor)
 INTERNAL_ENGINEER_COST_USD = (35.0, 55.0)            # USD/hr — engineer cost basis
 INTERNAL_PM_COST_USD       = (32.0, 50.0)            # USD/hr
 INTERNAL_FABRICATOR_COST_PER_TON_USD = (2200.0, 2900.0)   # cost basis (excl. margin)

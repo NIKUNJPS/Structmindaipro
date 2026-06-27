@@ -111,10 +111,10 @@ export default function Outputs() {
                                 <div className="flex items-start justify-between">
                                     <div>
                                         <div className="font-heading text-xl font-bold uppercase tracking-tight text-navy">
-                                            {o.mode_label}
+                                            {o.project_name || "Quick analysis"}
                                         </div>
                                         <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
-                                            {o.project_name || "Quick analysis"}
+                                            {o.mode_label}
                                         </div>
                                     </div>
                                     <Link

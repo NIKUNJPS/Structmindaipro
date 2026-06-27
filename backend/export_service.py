@@ -191,7 +191,7 @@ def export_docx(content: str, meta: dict) -> str:
     doc = Document()
 
     # Cover
-    doc.add_paragraph("4XSTRUCT · STRUCTMIND AI").runs[0].font.size = Pt(10)
+    doc.add_paragraph("4XSTRUCT · STRUCTMIND").runs[0].font.size = Pt(10)
     title = doc.add_paragraph()
     tr = title.add_run(meta["mode_label"].upper())
     tr.bold = True
@@ -300,7 +300,7 @@ def export_pdf(content: str, meta: dict) -> str:
         "meta", parent=body, textColor=MUTED, fontSize=9, spaceAfter=4
     )
 
-    story.append(Paragraph("4XSTRUCT · STRUCTMIND AI", brand))
+    story.append(Paragraph("4XSTRUCT · STRUCTMIND", brand))
     story.append(Paragraph(meta["mode_label"].upper(), h1))
     story.append(Paragraph(f"Project: {meta.get('project_name', 'Quick Analysis')}", meta_s))
     story.append(Paragraph(f"Generated: {meta.get('completed_at', '')}", meta_s))
@@ -360,8 +360,8 @@ def export_pdf(content: str, meta: dict) -> str:
         rightMargin=0.75 * inch,
         topMargin=0.85 * inch,
         bottomMargin=0.75 * inch,
-        title=meta["mode_label"],
-        author="StructMind AI",
+        title=meta.get("project_name") or meta["mode_label"],
+        author="4XStruct",
     )
     pdf.build(story)
     return str(path)

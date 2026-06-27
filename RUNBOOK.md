@@ -37,7 +37,9 @@ The preview environment already has everything wired. For production, set these 
 | `JWT_SECRET` | JWT signing key | Generate: `python -c "import secrets;print(secrets.token_urlsafe(64))"` |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | First seeded super admin | Your choice |
 | `ADMIN_EMAIL_2` / `ADMIN_PASSWORD_2` | Second seeded super admin (optional) | Your choice |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | OTP emails | Gmail App Password, SendGrid, or Resend |
+| `RESEND_API_KEY` | **Primary** OTP / email delivery (recommended) | [resend.com](https://resend.com) → API Keys |
+| `SMTP_FROM` / `SMTP_FROM_NAME` | Verified sender address + display name | e.g. `noreply@4xstruct.com` / `STRUCTMIND` |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | OTP email fallback (used only if `RESEND_API_KEY` is unset) | Gmail App Password, SendGrid, etc. |
 | `REACT_APP_BACKEND_URL` (frontend) | Public backend URL | Your deployment URL (e.g. `https://api.4xstruct.com`) |
 | `CORS_ORIGINS` (backend) | Comma-separated allowed origins | `https://app.4xstruct.com,https://www.4xstruct.com` |
 
@@ -195,7 +197,7 @@ Change these via env vars (`ADMIN_EMAIL`, `ADMIN_PASSWORD`, etc.) before your re
 | Login works but "/admin/users 403" | User role is detailer/fabricator, not super_admin | Re-seed via env vars or `db.users.updateOne({email}, {$set:{role:"super_admin"}})` |
 | AI estimate returns 502 | All Gemini fallback tiers failed | Check `EMERGENT_LLM_KEY` is set; check Emergent → Profile → Universal Key budget |
 | "No analysis modes enabled" empty state | Super admin hasn't enabled any modes for that user | Admin → Permissions → toggle modes in AI modes section |
-| OTP not arriving | SMTP env vars missing or incorrect | Check backend logs: `tail -n 100 /var/log/supervisor/backend.err.log \| grep DEV_EMAIL` — OTP is logged in dev mode |
+| OTP not arriving | Email provider not configured | Set `RESEND_API_KEY` (+ verified `SMTP_FROM`) in the backend env. With no provider the code logs the OTP to the backend console as a dev fallback; in production a failed send now returns a 502 so the user is told to retry rather than getting a silent "code sent". |
 | File upload returns 413 | User's `maxFileSizeMb` cap exceeded | Admin → Permissions → increase Max file size |
 | Backend won't start | Bad Mongo URL or missing requirement | `tail -n 100 /var/log/supervisor/backend.err.log` and fix |
 

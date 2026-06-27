@@ -230,9 +230,8 @@ export default function AnalysisReport() {
             const blob = await resp.blob();
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
-            a.download = `${analysis.mode_label.replace(/\s+/g, "_")}.${
-                fmt === "markdown" ? "md" : fmt
-            }`;
+            const baseName = (analysis.project_name || analysis.mode_label || "report").replace(/\s+/g, "_");
+            a.download = `${baseName}.${fmt === "markdown" ? "md" : fmt}`;
             a.click();
             URL.revokeObjectURL(a.href);
         } catch (e) {
@@ -276,14 +275,14 @@ export default function AnalysisReport() {
                 <nav className="mb-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
                     <Link to="/outputs" className="hover:text-navy">Outputs</Link>
                     <ChevronRight size={12} />
-                    <span className="text-navy">{analysis.mode_label}</span>
+                    <span className="text-navy">{analysis.project_name || analysis.mode_label}</span>
                 </nav>
 
                 <div className="flex flex-wrap items-end justify-between gap-6">
                     <div>
-                        <div className="text-overline">Analysis report</div>
+                        <div className="text-overline">{analysis.mode_label} · Analysis report</div>
                         <h1 className="mt-2 font-heading text-4xl font-black leading-none tracking-tight text-navy md:text-5xl">
-                            {analysis.mode_label}
+                            {analysis.project_name || analysis.mode_label}
                         </h1>
                         <div className="mt-3 flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
                             <span>Status: <span className="text-navy">{STAGE_LABELS[analysis.status]}</span></span>

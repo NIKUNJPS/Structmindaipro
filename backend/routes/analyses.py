@@ -101,12 +101,35 @@ async def _run_analysis_task(analysis_id: str):
         )
         requester_role = (requester or {}).get("role", "detailer")
 
+        # One authoritative tonnage per drawing-set, shared across Master Intake /
+        # MTO Engine / Estimation so all modes report the identical figure. Applied to
+        # the tonnage-bearing modes for BOTH roles (detailer + fabricator).
+        tonnage_block = ""
+        if file_pairs and mode_id in {"MASTER_INTAKE", "MTO"}:
+            from estimation.tonnage import get_or_lock_tonnage
+            locked = await get_or_lock_tonnage(
+                analysis.get("file_ids") or [], file_pairs, analysis_id
+            )
+            if locked and locked.get("tonnage"):
+                tonnage_block = (
+                    "\n\n## AUTHORITATIVE PROJECT TONNAGE\n"
+                    f"An independent verified member-by-member take-off computed the total "
+                    f"fabricated tonnage for this project as {locked['tonnage']:.2f} t. "
+                    f"This is the project's reference total — report this exact figure as the "
+                    f"project tonnage so every mode agrees. Your own detailed take-off must "
+                    f"reconcile to it; if your member-level sum differs by more than 2%, "
+                    f"recheck your take-off (missing or double-counted members) before "
+                    f"finalising, then state the reconciled total. Do not invent a different "
+                    f"headline tonnage."
+                )
+
         system_persona = get_system_prompt(requester_role)
         mode_prompt = get_mode_prompt(requester_role, mode_id)
         composed_system_prompt = (
             f"{system_persona.strip()}\n\n"
             f"## MODE: {meta['label']}\n{mode_prompt}\n\n"
             f"## GLOBAL FORMATTING\n{GLOBAL_FORMAT_RULES}"
+            f"{tonnage_block}"
         )
 
         user_text = analysis.get("input_text") or ""
@@ -253,6 +276,7 @@ async def create_analysis(
         raise HTTPException(status_code=413, detail=f"Too many files. Cap is {max_files}.")
 
     # Project access check
+    project_name = "Quick Analysis"
     if data.project_id:
         p = await db.projects.find_one({"id": data.project_id})
         if not p:
@@ -261,6 +285,7 @@ async def create_analysis(
             t.get("user_id") == user["id"] for t in p.get("team_members", [])
         ):
             raise HTTPException(status_code=403, detail="Access denied to project")
+        project_name = p.get("name") or project_name
 
     full = await db.users.find_one({"id": user["id"]})
     now = _now_iso()
@@ -268,6 +293,7 @@ async def create_analysis(
     doc = {
         "id": aid,
         "project_id": data.project_id,
+        "project_name": project_name,
         "file_ids": data.file_ids,
         "requested_by": user["id"],
         "requested_by_name": f"{full.get('first_name','')} {full.get('last_name','')}".strip(),

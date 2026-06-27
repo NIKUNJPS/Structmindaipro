@@ -25,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger("structmind")
 
 app = FastAPI(
-    title="StructMind AI API",
+    title="STRUCTMIND API",
     version="4.0.0",
     description="Structural Steel Intelligence Platform by 4XStruct Inc. — 3-role architecture.",
 )
@@ -52,7 +52,7 @@ app.include_router(admin_router)
 @app.get("/api")
 async def root():
     return {
-        "service": "StructMind AI API",
+        "service": "STRUCTMIND API",
         "version": "4.0.0",
         "status": "ok",
         "powered_by": "4XStruct Inc.",
@@ -69,7 +69,7 @@ async def health():
 async def on_startup():
     await ensure_indexes()
     await seed_admin()
-    logger.info("StructMind AI backend ready · v4.0.0 · 3-role architecture")
+    logger.info("STRUCTMIND backend ready · v4.0.0 · 3-role architecture")
 
 
 @app.on_event("shutdown")

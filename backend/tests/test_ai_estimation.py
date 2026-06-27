@@ -100,8 +100,9 @@ class TestSchema:
         assert r.status_code == 200
         s = r.json()["schema"]
         assert "fields" not in s
-        assert s["default_low"] == 120 and s["default_high"] == 220
-        assert "drawing" in s["rate_unit"].lower()
+        # Detailer estimates are hours-based at an $18–25/hr default band.
+        assert s["default_low"] == 18 and s["default_high"] == 25
+        assert "hr" in s["rate_unit"].lower()
 
 
 # ---------- VALIDATION ----------
@@ -208,25 +209,28 @@ class TestAIHappyPath:
     def det_result(self, detailer):
         fid = _upload(detailer["headers"], BOM_CSV, "bom_det_happy.csv", "text/csv")
         r = requests.post(f"{API}/estimation/ai-calculate",
-                          json={"role": "detailer", "rate_low": 120, "rate_high": 220, "file_ids": [fid]},
+                          json={"role": "detailer", "rate_low": 18, "rate_high": 25, "file_ids": [fid]},
                           headers=detailer["headers"], timeout=120)
         assert r.status_code == 200, r.text
         return r.json()
 
     def test_fabricator_happy(self, fab_result):
         v = fab_result["result"]["visible"]
-        assert v["ai_extracted"]["tonnage"] > 0
+        assert v["extracted"]["tonnage"] > 0
+        assert "ai_extracted" not in v and "confidence" not in v
         assert "→" in v["grand_range_text"]
         assert v["final_amount"]
         engine = fab_result["result"]["meta"].get("engine", "")
         assert engine.startswith("STRUCTMIND CORE"), engine
-        assert fab_result["project_name"].startswith("AI · ")
+        assert fab_result["project_name"].startswith("Estimate · ")
 
     def test_detailer_happy(self, det_result):
         v = det_result["result"]["visible"]
-        assert v["ai_extracted"]["drawings"] >= 1
-        assert "complexity" in v["ai_extracted"]
-        assert v["ai_extracted"]["complexity_multiplier"] > 0
+        # Hours-based detailer model: no AI/confidence labels surfaced.
+        assert v["total_hours"] > 0
+        assert v["extracted"]["total_hours"] > 0
+        assert "complexity" in v["extracted"]
+        assert "ai_extracted" not in v and "confidence" not in v
         assert v["grand_range_text"]
         assert det_result["result"]["meta"]["engine"].startswith("STRUCTMIND CORE")
 
@@ -251,7 +255,7 @@ class TestAIHappyPath:
         ids = [it["id"] for it in items]
         assert fab_result["id"] in ids
         match = next(it for it in items if it["id"] == fab_result["id"])
-        assert match["project_name"].startswith("AI · ")
+        assert match["project_name"].startswith("Estimate · ")
 
     def test_audit_log_records_ai_calculate(self, admin_headers, fab_result):
         r = requests.get(f"{API}/admin/audit-log", headers=admin_headers, timeout=20)

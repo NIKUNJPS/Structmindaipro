@@ -20,6 +20,7 @@ from estimation.ai_extract import extract_quantities
 from estimation.engine import CALCULATORS, apply_band_to_extracted, calculate
 from estimation.pdf import render_pdf
 from estimation.rates import supported_countries
+from estimation.tonnage import get_or_lock_tonnage
 from middleware.permission_guard import (
     audit_log,
     check_country,
@@ -70,14 +71,14 @@ async def schema_for_role(role: str, user=Depends(get_current_user)):
         "role": role,
         "schema": {
             "title": "Detailing estimate",
-            "subtitle": "Upload your drawings — STRUCTMIND CORE extracts the drawing count + complexity and applies your per-drawing rate band.",
-            "rate_unit": "/ drawing",
-            "rate_label_low":  "Your per-drawing fee — LOW",
-            "rate_label_high": "Your per-drawing fee — HIGH",
-            "rate_help_low":   "Lower bound of your studio's per-drawing fee (local currency).",
-            "rate_help_high":  "Upper bound of your studio's per-drawing fee (local currency).",
-            "default_low":  120,
-            "default_high": 220,
+            "subtitle": "Upload your drawings — the engine estimates the detailing hours and applies your hourly rate band.",
+            "rate_unit": "/ hr",
+            "rate_label_low":  "Detailer rate — LOW ($/hr)",
+            "rate_label_high": "Detailer rate — HIGH ($/hr)",
+            "rate_help_low":   "Lower bound of the detailer hourly rate.",
+            "rate_help_high":  "Upper bound of the detailer hourly rate.",
+            "default_low":  18,
+            "default_high": 25,
         },
     }
 
@@ -104,6 +105,9 @@ async def ai_calculate(
         rate_high = float(payload.get("rate_high", 0))
     except (TypeError, ValueError):
         raise HTTPException(status_code=422, detail="rate_low and rate_high must be numbers.")
+    # Detailer estimates are hours-based and default to the $18–25/hr band when no rate is supplied.
+    if role == "detailer" and (rate_low <= 0 or rate_high <= 0):
+        rate_low, rate_high = 18.0, 25.0
     if rate_low <= 0 or rate_high <= 0:
         raise HTTPException(status_code=422, detail="Both LOW and HIGH rates must be greater than 0.")
 
@@ -145,15 +149,29 @@ async def ai_calculate(
             detail="Uploaded files are not in a supported format for AI analysis. Supported: PDF, PNG, JPG, WEBP, TXT, CSV.",
         )
 
-    # Run AI extraction
+    # Run extraction. Fabricator tonnage is shared via the project tonnage lock so the
+    # estimate matches the tonnage reported by Master Intake / MTO Engine for the same files.
     now = datetime.now(timezone.utc).isoformat()
     session_id = sha256_hex(f"est-ai:{user['id']}:{role}:{now}")[:24]
     try:
-        extracted, engine = await extract_quantities(
-            role=role, session_id=session_id, file_paths=file_pairs,
-        )
+        if role == "fabricator":
+            lock = await get_or_lock_tonnage(
+                [f["id"] for f in file_docs], file_pairs, session_id
+            )
+            if not lock:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Could not extract a usable tonnage from the uploaded drawings.",
+                )
+            extracted, engine = lock["extracted"], lock["engine"]
+        else:
+            extracted, engine = await extract_quantities(
+                role=role, session_id=session_id, file_paths=file_pairs,
+            )
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"AI extraction failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Extraction failed: {e}")
 
     # Apply rate band
     try:
@@ -170,7 +188,7 @@ async def ai_calculate(
     # Auto-derive a project name from the first file if user didn't provide one
     if not project_name and file_docs:
         first = file_docs[0].get("original_name") or "Estimate"
-        project_name = f"AI · {first[:60]}"
+        project_name = f"Estimate · {first[:60]}"
 
     record = {
         "id": sha256_hex(f"est-ai:{user['id']}:{session_id}")[:24],
@@ -182,7 +200,7 @@ async def ai_calculate(
         "inputs": {
             "rate_low":  rate_low,
             "rate_high": rate_high,
-            "ai_extracted": extracted,
+            "extracted": extracted,
         },
         "result": result,
         "engine": engine,
@@ -304,7 +322,7 @@ async def download_pdf(
     await audit_log(user["id"], "estimation.pdf", "estimate", eid, request)
     return FileResponse(
         path,
-        filename=f"StructMind_{e['role'].title()}_Estimate.pdf",
+        filename=f"STRUCTMIND_{e['role'].title()}_Estimate.pdf",
         media_type="application/pdf",
     )
 

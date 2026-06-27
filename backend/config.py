@@ -35,13 +35,14 @@ class Settings:
     emergent_llm_key: str = os.environ.get("EMERGENT_LLM_KEY", "")
     gemini_api_key: str = os.environ.get("GEMINI_API_KEY", "")
 
-    # SMTP
+    # Email — Resend (preferred) then SMTP fallback
+    resend_api_key: str = os.environ.get("RESEND_API_KEY", "")
     smtp_host: str = os.environ.get("SMTP_HOST", "")
     smtp_port: int = int(os.environ.get("SMTP_PORT", "587"))
     smtp_user: str = os.environ.get("SMTP_USER", "")
     smtp_pass: str = os.environ.get("SMTP_PASS", "")
     smtp_from: str = os.environ.get("SMTP_FROM", "noreply@4xstruct.com")
-    smtp_from_name: str = os.environ.get("SMTP_FROM_NAME", "StructMind AI")
+    smtp_from_name: str = os.environ.get("SMTP_FROM_NAME", "STRUCTMIND")
 
     # URLs
     frontend_url: str = os.environ.get("FRONTEND_URL", "http://localhost:3000")

@@ -279,12 +279,11 @@ def apply_band_to_extracted(
             "currency": c["currency"],
             "symbol":   c["symbol"],
             "visible": {
-                "ai_extracted": {
+                "extracted": {
                     "tonnage":          _round(tonnage),
                     "members_counted":  extracted.get("members_counted", 0),
                     "primary_material": extracted.get("primary_material", ""),
                     "drawings_seen":    extracted.get("drawings_seen", 0),
-                    "confidence":       extracted.get("confidence", "medium"),
                     "notes":            extracted.get("notes", ""),
                 },
                 "user_rate_low":  _format_money(rate_low,  c),
@@ -304,9 +303,9 @@ def apply_band_to_extracted(
                 "final_amount_raw": _round(grand_mid),
             },
             "breakdown": [
-                {"item": "Total fabricated tonnage (AI)", "qty": _round(tonnage), "unit": "t"},
-                {"item": "User per-ton low",              "qty": _format_money(rate_low,  c), "unit": "/ ton"},
-                {"item": "User per-ton high",             "qty": _format_money(rate_high, c), "unit": "/ ton"},
+                {"item": "Total fabricated tonnage", "qty": _round(tonnage), "unit": "t"},
+                {"item": "Per-ton rate — low",       "qty": _format_money(rate_low,  c), "unit": "/ ton"},
+                {"item": "Per-ton rate — high",      "qty": _format_money(rate_high, c), "unit": "/ ton"},
             ],
             "meta": {
                 "engine": "STRUCTMIND CORE",
@@ -316,16 +315,19 @@ def apply_band_to_extracted(
         }
 
     if role == "detailer":
+        # Hours-based: detailing effort (hours) × the per-hour rate band.
+        total_hours = float(extracted.get("total_hours", 0) or 0)
         drawings = int(extracted.get("drawings", 0) or 0)
-        if drawings <= 0:
-            raise ValueError("AI could not extract a usable drawing count.")
-        comp_mult = float(extracted.get("complexity_multiplier", 1.0) or 1.0)
-        # Apply complexity multiplier to the per-drawing rate
-        effective_low  = rate_low  * comp_mult
-        effective_high = rate_high * comp_mult
-        subtotal_low   = drawings * effective_low
-        subtotal_high  = drawings * effective_high
-        subtotal_mid   = (subtotal_low + subtotal_high) / 2.0
+        if total_hours <= 0:
+            # Derive hours from drawings × complexity productivity if hours weren't given.
+            comp = COMPLEXITY.get(extracted.get("complexity", "Medium"), COMPLEXITY["Medium"])
+            if drawings <= 0:
+                raise ValueError("Could not determine detailing hours or drawing count from the drawings.")
+            total_hours = drawings * comp["drawings_hr"]
+
+        subtotal_low  = total_hours * rate_low
+        subtotal_high = total_hours * rate_high
+        subtotal_mid  = (subtotal_low + subtotal_high) / 2.0
         sanity = sanity_check(role=role, total=subtotal_mid, drawings=drawings, currency=c["currency"])
 
         return {
@@ -334,19 +336,19 @@ def apply_band_to_extracted(
             "currency": c["currency"],
             "symbol":   c["symbol"],
             "visible": {
-                "ai_extracted": {
+                "extracted": {
+                    "total_hours":           _round(total_hours),
                     "drawings":              drawings,
                     "connections":           extracted.get("connections", 0),
                     "complexity":            extracted.get("complexity", "Medium"),
-                    "complexity_multiplier": _round(comp_mult),
                     "drawings_seen":         extracted.get("drawings_seen", 0),
-                    "confidence":            extracted.get("confidence", "medium"),
                     "notes":                 extracted.get("notes", ""),
                 },
-                "user_rate_low":     _format_money(rate_low,  c),
-                "user_rate_high":    _format_money(rate_high, c),
-                "effective_rate_low":  _format_money(effective_low,  c),
-                "effective_rate_high": _format_money(effective_high, c),
+                "total_hours":     _round(total_hours),
+                "user_rate_low":   _format_money(rate_low,  c),
+                "user_rate_high":  _format_money(rate_high, c),
+                "rate_basis":      f"{_format_money(rate_low, c)} – {_format_money(rate_high, c)} / hr",
+                "timeline_weeks":  _round(total_hours / 38),
                 "subtotal_low":   _format_money(subtotal_low,  c),
                 "subtotal_mid":   _format_money(subtotal_mid,  c),
                 "subtotal_high":  _format_money(subtotal_high, c),
@@ -358,12 +360,12 @@ def apply_band_to_extracted(
                 "final_amount_raw": _round(subtotal_mid),
             },
             "breakdown": [
-                {"item": "Production drawings (AI)", "qty": drawings, "unit": "dwgs"},
-                {"item": "Connections (AI)",          "qty": extracted.get("connections", 0), "unit": "conn"},
-                {"item": "User per-drawing low",      "qty": _format_money(rate_low,  c), "unit": "/ dwg"},
-                {"item": "User per-drawing high",     "qty": _format_money(rate_high, c), "unit": "/ dwg"},
-                {"item": "Complexity",                "qty": extracted.get("complexity", "Medium"),
-                 "unit": "", "rate": f"×{comp_mult:.2f}"},
+                {"item": "Detailing hours",       "qty": _round(total_hours), "unit": "hrs"},
+                {"item": "Production drawings",   "qty": drawings, "unit": "dwgs"},
+                {"item": "Connections",           "qty": extracted.get("connections", 0), "unit": "conn"},
+                {"item": "Rate per hour — low",   "qty": _format_money(rate_low,  c), "unit": "/ hr"},
+                {"item": "Rate per hour — high",  "qty": _format_money(rate_high, c), "unit": "/ hr"},
+                {"item": "Complexity",            "qty": extracted.get("complexity", "Medium"), "unit": ""},
             ],
             "meta": {
                 "engine": "STRUCTMIND CORE",

@@ -1403,6 +1403,17 @@ Caption: Assessment of every uploaded file before MTO extraction begins.
 - Cross-sheet mark conflicts detected: [value] — list mark numbers
 - Unit system detected: IMPERIAL / METRIC / DUAL
 
+**Per-Sheet Extraction Coverage**
+
+Caption: Proof that every sheet was mined — used to reconcile Output 2 row counts.
+
+| Source Sheet | Member Rows on Sheet | Rows Extracted to MTO | Status |
+| :--- | ---: | ---: | :---: |
+
+- Every sheet listed above MUST appear here. Rows Extracted MUST equal the rows that
+  sheet contributes to Output 2. Status = COMPLETE only when the two counts match;
+  otherwise PARTIAL and raise an RFI for the missing data.
+
 ## OUTPUT 2 — COMPLETE MTO TABLE
 ---
 
@@ -1424,6 +1435,19 @@ MARK CONFLICT / DEFERRED / VIF / SCOPED OUT / ASSUMED / DUPLICATE
 Extraction method: BOM DIRECT / MEMBER SCHEDULE CALC / FRAMING PLAN ESTIMATE / ASSUMED
 
 Sort order: by Type, then by Source Sheet, then by Mark designation.
+
+COMPLETENESS — MANDATORY, ZERO EXCEPTIONS:
+  - Every distinct member from every uploaded drawing and document is its OWN row.
+    Include primary steel, secondary steel, bracing, miscellaneous, embeds, anchor
+    bolts, structural bolts and weld studs.
+  - NEVER summarize, sample, abbreviate or collapse. Do not write "typical",
+    "similar", "etc.", "(×N) typical", "and so on", or a row that stands in for
+    several members. If a mark repeats, set Qty — do not drop the row.
+  - If the table is long, KEEP GOING until the final member is listed. Do not stop
+    early, do not truncate, do not write "continued" or "remaining items omitted".
+  - The total row count must reconcile with the Per-Sheet Extraction Coverage table
+    in Output 1. State at the end of this table:
+      Total members extracted: [value]   Sheets covered: [value] of [value]
 
 ## OUTPUT 3 — MTO SUMMARY BY CATEGORY
 ---

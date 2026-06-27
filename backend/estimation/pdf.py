@@ -91,7 +91,7 @@ def _table(rows, st, col_widths=None, highlight_last=False):
 def _header_block(st, role: str, country: str) -> list:
     band = Table(
         [[
-            Paragraph("4XSTRUCT · STRUCTMIND AI", st["brand"]),
+            Paragraph("4XSTRUCT · STRUCTMIND", st["brand"]),
             Paragraph(
                 f"{role.upper()} · {country.upper()} · {datetime.now().strftime('%d %b %Y')}",
                 ParagraphStyle("rhdr", fontName="Helvetica-Bold", fontSize=8.5, leading=11, textColor=WHITE, alignment=2),
@@ -133,7 +133,7 @@ def _kpi_strip(st, kpis):
 # ─── DETAILER ─────────────────────────────────────────
 def _render_detailer(result: dict, project: str, st: dict) -> list:
     v = result["visible"]
-    is_ai = "ai_extracted" in v
+    is_ai = "extracted" in v
     story = _header_block(st, "DETAILER", result["country"])
     story += [
         Paragraph("DETAILING ESTIMATE", st["title"]),
@@ -141,36 +141,33 @@ def _render_detailer(result: dict, project: str, st: dict) -> list:
     ]
 
     if is_ai:
-        ai = v["ai_extracted"]
+        ex = v["extracted"]
         story += [
             _kpi_strip(st, [
-                ("AI DRAWINGS",   f"{ai['drawings']:,}"),
-                ("RATE BAND",     f"{v['user_rate_low']}  →  {v['user_rate_high']} / dwg"),
-                ("FINAL (MID)",   v["grand_mid"]),
+                ("DETAILING HOURS", f"{ex.get('total_hours', v.get('total_hours', 0)):,.0f}"),
+                ("RATE BAND",       f"{v['user_rate_low']}  →  {v['user_rate_high']} / hr"),
+                ("FINAL (MID)",     v["grand_mid"]),
             ]),
             Spacer(1, 0.25 * inch),
 
-            Paragraph("AI-EXTRACTED QUANTITIES (STRUCTMIND CORE)", st["h2"]),
+            Paragraph("WORKLOAD SUMMARY", st["h2"]),
             _table(
                 [["Metric", "Value"]] +
-                [["Production drawings detected", f"{ai['drawings']:,}"],
-                 ["Connections detected",         f"{ai['connections']:,}"],
-                 ["Complexity",                   ai["complexity"]],
-                 ["Complexity multiplier",        f"×{ai['complexity_multiplier']:.2f}"],
-                 ["Drawings analysed",            f"{ai['drawings_seen']:,}"],
-                 ["Confidence",                   ai["confidence"].upper()]],
+                [["Estimated detailing hours",    f"{ex.get('total_hours', 0):,.1f} hrs"],
+                 ["Production drawings",          f"{ex.get('drawings', 0):,}"],
+                 ["Connections",                  f"{ex.get('connections', 0):,}"],
+                 ["Complexity",                   ex.get("complexity", "Medium")],
+                 ["Drawings reviewed",            f"{ex.get('drawings_seen', 0):,}"]],
                 st, col_widths=[3.6 * inch, 3.6 * inch],
             ),
             Spacer(1, 0.1 * inch),
-            Paragraph(f"AI note: {ai.get('notes','—')}", st["meta"]),
+            Paragraph(f"Note: {ex.get('notes','—')}", st["meta"]),
             Spacer(1, 0.2 * inch),
 
-            Paragraph("RATE BAND × COMPLEXITY", st["h2"]),
+            Paragraph("RATE BASIS", st["h2"]),
             _table(
                 [["Input", "Low", "High"]] +
-                [["Per-drawing fee (user)",   v["user_rate_low"],      v["user_rate_high"]],
-                 [f"Effective fee × {ai['complexity_multiplier']:.2f}",
-                                              v["effective_rate_low"], v["effective_rate_high"]]],
+                [["Detailer rate per hour", v["user_rate_low"], v["user_rate_high"]]],
                 st, col_widths=[3.8 * inch, 1.4 * inch, 1.4 * inch],
             ),
             Spacer(1, 0.2 * inch),
@@ -186,7 +183,7 @@ def _render_detailer(result: dict, project: str, st: dict) -> list:
             Paragraph("FINAL DETAILING RANGE", st["h2"]),
             Paragraph(v["grand_range_text"], st["moneyBig"]),
             Paragraph(
-                f"Mid-point headline: {v['final_amount']} · Drawings × your per-drawing band × AI complexity factor.",
+                f"Mid-point headline: {v['final_amount']} · Detailing hours × hourly rate band.",
                 st["meta"],
             ),
         ]
@@ -230,7 +227,7 @@ def _render_detailer(result: dict, project: str, st: dict) -> list:
 # ─── FABRICATOR (range-based) ─────────────────────────
 def _render_fabricator(result: dict, project: str, st: dict) -> list:
     v = result["visible"]
-    is_ai = "ai_extracted" in v
+    is_ai = "extracted" in v
     story = _header_block(st, "FABRICATOR", result["country"])
     story += [
         Paragraph("FABRICATION ESTIMATE", st["title"]),
@@ -238,27 +235,26 @@ def _render_fabricator(result: dict, project: str, st: dict) -> list:
     ]
 
     if is_ai:
-        ai = v["ai_extracted"]
+        ex = v["extracted"]
         story += [
             _kpi_strip(st, [
-                ("AI TONNAGE",  f"{ai['tonnage']:,.1f} t"),
+                ("TONNAGE",     f"{ex['tonnage']:,.1f} t"),
                 ("RATE BAND",   f"{v['user_rate_low']}  →  {v['user_rate_high']} / ton"),
                 ("FINAL (MID)", v["grand_mid"]),
             ]),
             Spacer(1, 0.25 * inch),
 
-            Paragraph("AI-EXTRACTED QUANTITIES (STRUCTMIND CORE)", st["h2"]),
+            Paragraph("TONNAGE TAKE-OFF", st["h2"]),
             _table(
                 [["Metric", "Value"]] +
-                [["Total fabricated tonnage", f"{ai['tonnage']:,.2f} t"],
-                 ["Distinct members counted", f"{ai['members_counted']:,}"],
-                 ["Primary material",         ai.get("primary_material", "—")],
-                 ["Drawings analysed",        f"{ai['drawings_seen']:,}"],
-                 ["Confidence",               ai["confidence"].upper()]],
+                [["Total fabricated tonnage", f"{ex['tonnage']:,.2f} t"],
+                 ["Distinct members counted", f"{ex['members_counted']:,}"],
+                 ["Primary material",         ex.get("primary_material", "—")],
+                 ["Drawings reviewed",        f"{ex['drawings_seen']:,}"]],
                 st, col_widths=[3.6 * inch, 3.6 * inch],
             ),
             Spacer(1, 0.1 * inch),
-            Paragraph(f"AI note: {ai.get('notes','—')}", st["meta"]),
+            Paragraph(f"Note: {ex.get('notes','—')}", st["meta"]),
             Spacer(1, 0.2 * inch),
 
             Paragraph("USER-PROVIDED RATE BAND", st["h2"]),
@@ -282,7 +278,7 @@ def _render_fabricator(result: dict, project: str, st: dict) -> list:
             Paragraph("FINAL FABRICATION RANGE", st["h2"]),
             Paragraph(v["grand_range_text"], st["moneyBig"]),
             Paragraph(
-                f"Mid-point headline: {v['final_amount']} · AI tonnage × your per-ton band · includes {result['country']} tax.",
+                f"Mid-point headline: {v['final_amount']} · tonnage × your per-ton band · includes {result['country']} tax.",
                 st["meta"],
             ),
         ]
@@ -368,8 +364,8 @@ def render_pdf(result: dict, project: str, *, filename: str | None = None) -> st
         rightMargin=0.7 * inch,
         topMargin=0.65 * inch,
         bottomMargin=0.65 * inch,
-        title=f"StructMind AI · {result['role'].title()} Estimate",
-        author="StructMind AI · 4XStruct Inc.",
+        title=f"STRUCTMIND · {result['role'].title()} Estimate",
+        author="4XStruct Inc.",
     )
     pdf.build(story)
     return str(path)

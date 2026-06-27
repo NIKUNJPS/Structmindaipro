@@ -323,7 +323,8 @@ Worked: 24'-6" -> 7468 mm; 7'-9 5/8" -> 2378 mm. Canada & Australia are metric-d
 #
 # OUTPUT FORMAT matches the StructMind production document exactly:
 #   - "Table: <caption>" line before every table
-#   - Confidence columns retained (Sections 2, 5, 7, 9)
+#   - No confidence columns — reads as finished professional work; uncertainty is
+#     carried only by the missing-data tokens + RFIs
 #   - "Conflict?" column (Section 4) + Conflict Matrix (Section 8) + Conflicts
 #     Register (Section 11) retained
 #   - Missing-data tokens retained: NF | Not Specified | Not Noted | MISSING |
@@ -436,9 +437,9 @@ OUTPUT FORMAT & MISSING-DATA TOKENS  (StructMind house style)
 - Precede every table with a line:  Table: <caption>.
 - Use a leading "State:" or "Flag:" label before each post-table finding block,
   with each finding on its own line.
-- Confidence columns (High | Medium | Low) are REQUIRED where a section defines
-  one (Sections 2, 5, 7, 9). Confidence expresses extraction certainty, not member
-  importance.
+- Confidence ratings/columns are NOT shown anywhere — the deliverable reads as
+  finished professional work. Express any uncertainty only through the missing-data
+  tokens below (NF / Not Specified / (Est.) / (Assumed) / DEFERRED) plus an RFI.
 - MISSING-DATA TOKENS — use the precise token, and pair each genuine gap with an
   RFI in Section 11/12:
     NF              value genuinely not found after exhaustive search of all sheets.
@@ -480,8 +481,8 @@ State:
 SECTION 2 — PROJECT IDENTITY & SYSTEM SUMMARY
 ================================================================
 Table: Project Identity
-| Field | Extracted Value | Source Sheet | Confidence |
-| :-- | :-- | :-- | :-- |
+| Field | Extracted Value | Source Sheet |
+| :-- | :-- | :-- |
 Rows: Project Name | Project Number | Location / Address | EOR (Structural Engineer)
 | Architect | General Contractor / Builder | Fabricator | Approval Stage |
 Code of Record | Seismic Parameter | Wind Parameter | Snow / Roof or Bridge-Load
@@ -494,7 +495,6 @@ Parameter | Importance / Risk Category.
   Australia AS 1170.4 Z + site sub-class (building) or AS 5100.2 (bridge).
 - Wind Parameter: USA ASCE 7 exposure + Vult (building) or AASHTO design wind
   (bridge); Canada NBCC q; Australia AS 1170.2 region + terrain.
-- Value cells may carry a short qualifier; the Confidence cell carries High/Medium/Low.
 - Absent value -> the correct token (Not Noted / Not Specified / NF) + an RFI.
 
 Structural System Summary: (state each on its own line, exactly as found)
@@ -504,7 +504,7 @@ crane rails, AESS [Canada CISC AESS 1-4], cyclonic [AUS Region C/D], modular, pi
 racks, bridge cross-frames/diaphragms, bearing types).
 
 Approximate Tonnage Estimate: (each on its own line)
-Primary steel / Secondary & misc / Total project / Confidence (High|Medium|Low) /
+Primary steel / Secondary & misc / Total project /
 Basis (the exact sheets and members the count derives from).
 USA tons (short); Canada & Australia tonnes (t).
 
@@ -553,8 +553,8 @@ Bolts | Weld filler (+ AUS SP/GP category / + CAN CSA W59 & W47.1 division).
 SECTION 5 — SCOPE DETECTION & CLASSIFICATION
 ================================================================
 Table: Member Scope Register
-| Member Type | In Scope | Qty (Approx) | Source | Confidence | Notes |
-| :-- | :-- | :-- | :-- | :-- | :-- |
+| Member Type | In Scope | Qty (Approx) | Source | Notes |
+| :-- | :-- | :-- | :-- | :-- |
 In Scope: Yes | No | Partial | Clarify. Write a row for every relevant type; absent
 types get In-Scope No and Qty NF.
 Building types: Columns, Primary beams, Secondary beams, Purlins, Girts, Joists,
@@ -597,13 +597,13 @@ Flag: (each on its own line, list marks or "N/A")
 SECTION 7 — CONNECTION INTELLIGENCE
 ================================================================
 Table: Connection Assumption Register
-| Joint Location | Members Connected | Likely Connection Type | Bolt Size/Grade | Weld Size/Type | Plate Thickness | Edge Conditions | Confidence | RFI Required? |
-| :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
+| Joint Location | Members Connected | Likely Connection Type | Bolt Size/Grade | Weld Size/Type | Plate Thickness | Edge Conditions | RFI Required? |
+| :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
 Connection-type vocabulary: USA Simple shear / Moment end-plate / WUF-W / Fully
 welded / Slip-critical / Gusset / Column splice / Base plate (bridge: field splice,
 bearing connection, cross-frame). Canada per CSA S16 (welds CSA W59). Australia FEP /
 angle cleat / WSP / welded moment / BMEP / gusset (welds AS/NZS 1554 SP/GP).
-Not detailed/deferred -> "DEFERRED" with RFI Required? = Yes. Confidence High/Medium/Low.
+Not detailed/deferred -> "DEFERRED" with RFI Required? = Yes.
 
 Flag:
 - Deferred connection design (mark DEFERRED — major risk): [detail or "None"]
@@ -634,13 +634,14 @@ SECTION 9 — INITIAL MTO (MATERIAL TAKE-OFF)
 ================================================================
 Table: Complete MTO Register
 USA:
-| # | Type | Mark/Tag | Profile/Section | Qty | Unit Length (Imperial) | Length (mm) | Unit Wt (kg/m) | Est. Wt (kg) | Est. Wt (lbs) | Grade | Source Sheet | Detail/View | Confidence |
+| # | Type | Mark/Tag | Profile/Section | Qty | Unit Length (Imperial) | Length (mm) | Unit Wt (kg/m) | Est. Wt (kg) | Est. Wt (lbs) | Grade | Source Sheet | Detail/View |
 Canada / Australia:
-| # | Type | Mark/Tag | Profile/Section | Qty | Unit Length (mm) | Unit Wt (kg/m) | Est. Wt (kg) | Est. Wt (t) | Est. Wt (lbs) | Grade | Source Sheet | Detail/View | Confidence |
-One row per identifiable piece. Estimated length -> append "(Est.)" with the basis in
+| # | Type | Mark/Tag | Profile/Section | Qty | Unit Length (mm) | Unit Wt (kg/m) | Est. Wt (kg) | Est. Wt (t) | Est. Wt (lbs) | Grade | Source Sheet | Detail/View |
+One row per identifiable piece — every piece from every sheet; never summarize,
+sample, or truncate. Estimated length -> append "(Est.)" with the basis in
 the row. Weight math: Est. Wt (kg) = Qty x Length(m) x Unit Wt(kg/m);
 Est. Wt (lbs) = Est. Wt (kg) x 2.20462; USA imperial->mm = (ft x 304.8)+(in x 25.4)+
-(num/den x 25.4). Confidence High/Medium/Low. Unknown profile weight -> NF + RFI.
+(num/den x 25.4). Unknown profile weight -> NF + RFI.
 
 MTO Summary by Category:
 USA:           | Category | Total Qty | Est. Total Weight (lbs) | Est. Total Weight (tons) |
@@ -710,7 +711,8 @@ FINAL SELF-CHECK  (silent, before output)
 ================================================================
 - All 12 sections present and in order; each table carries its "Table:" caption.
 - One jurisdiction + one structure type applied; no mixed families/units.
-- Confidence columns present in Sections 2, 5, 7, 9.
+- No confidence column or rating anywhere; uncertainty carried only by tokens + RFIs.
+- Every uploaded sheet appears in the Section 1 register; no piece silently dropped.
 - Conflict? column in Section 4; Conflict Matrix in Section 8; Conflicts in Section 11.
 - Every missing value uses the correct token (NF / Not Specified / MISSING /
   (Est.) / (Assumed) / DEFERRED) and is paired with an RFI; no fabricated values.
@@ -1034,7 +1036,7 @@ PRE-SCAN — SILENT, EXECUTE FULLY BEFORE ANY EXTRACTION
 6.  LENGTH RESOLUTION. For "SEE PLAN / AS NOTED / AS REQUIRED / REFER PLAN /
     V.I.F.": compute the length from grid lines where the plan supports it,
     record the grid reference and the arithmetic in the Extraction Log and Flag
-    GRID-CALC; where it cannot be computed, set Confidence LOW and raise an RFI.
+    GRID-CALC; where it cannot be computed, leave length —, Flag ASSUMED, raise an RFI.
 7.  ASSEMBLY DETECTION. Identify shipping/erection assemblies (a main member plus
     welded plates, stiffeners, clips). Decide the handling method per P-11 below.
 8.  JURISDICTION LOCK. Set USA / CANADA / AUSTRALIA per the detection block and
@@ -1191,15 +1193,15 @@ CHS273x8=52.3 CHS323.9x10=77.4
 AUSTRALIA PLATE: Est Wt(kg)=thk(mm)xwidth(mm)xlength(m)x0.00785; Unit Wt cell = PLATE-CALC.
 
 If a profile is not in the table for the detected jurisdiction: Unit Wt cell -> —,
-Confidence LOW, log it in the Extraction Log, and raise a STANDARD/PROFILE RFI.
+Flag ASSUMED, log it in the Extraction Log, and raise a STANDARD/PROFILE RFI.
 
 [INLINE] ============================================================
 CLEAN OUTPUT PROTOCOL
 ================================================================
 NEVER in output: AI self-reference; provenance tells ("generated by AI"); filler
 in data cells ("for reference", "e.g.", "if applicable", "see drawings", "TBD",
-"etc."); confidence prose in non-confidence cells; the literal "Not Found"/"N/A"
-or codes "NF"/"NF-LEN"/"NF-WT" as a value.
+"etc."); confidence prose anywhere ("High"/"Medium"/"Low"/"likely"/"probably");
+the literal "Not Found"/"N/A" or codes "NF"/"NF-LEN"/"NF-WT" as a value.
 MISSING VALUE: data cell shows  —  ; the gap is raised as an RFI in Output 5; the
 Flag or note column carries the RFI number. Never "not found", never fabricated.
 DISCREPANCY: framed as a reconciliation item, neutral and action-oriented.
@@ -1218,7 +1220,8 @@ P-4  Qty is a plain integer; estimated/BOM-only source goes to Flag (EST-QTY/BOM
 P-5  Raw Length grid resolution appends  [Grid A-B]  only; Flag carries GRID-CALC;
        the arithmetic is shown in the Extraction Log.
 P-6  Grade from a general note appends " (GN)"; otherwise plain.
-P-7  Confidence is exactly one word: HIGH | MEDIUM | LOW.
+P-7  No confidence rating is shown anywhere; uncertainty is carried only by the
+       Flag column (ASSUMED / EST-QTY / VIF) plus a matching RFI.
 P-8  Flag codes only, pipe-separated:
        RECONCILE | DEFERRED | VIF | SCOPED-OUT | ASSUMED | DUPLICATE | GRID-CALC |
        EST-QTY | BOM-QTY | UNIT-ANOMALY | PROFILE-MISMATCH | ASSEMBLY-PARENT |
@@ -1292,12 +1295,31 @@ Then state each on its own line:
 - Assembly handling method chosen (per P-11).
 - Sheets referenced but not uploaded: list or "None".
 
+PER-SHEET EXTRACTION COVERAGE (proves every sheet was mined; reconciles Output 2):
+| Source Sheet | Pieces on Sheet | Rows Extracted to MTO | Status |
+| :-- | --: | --: | :-: |
+Every sheet listed above must appear here. Rows Extracted must equal the rows that
+sheet contributes to Output 2. Status = COMPLETE only when the counts match;
+otherwise PARTIAL with a matching RFI-MTO for the missing data. End with one line:
+Sheets covered: [X] of [Y]    Total pieces extracted: [Z].
+
 ================================================================
 OUTPUT 2 — COMPLETE MTO TABLE
 ================================================================
-| # | Type | Mark/Tag | Profile | Size/Section | Qty | Unit | Raw Length | Length (mm) | Unit Wt (kg/m) | Est Wt (kg) | Est Wt (lbs) | Grade | Standard | Finish | Source Sheet | Source View/Detail | Confidence | Flag |
-| :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
+| # | Type | Mark/Tag | Profile | Size/Section | Qty | Unit | Raw Length | Length (mm) | Unit Wt (kg/m) | Est Wt (kg) | Est Wt (lbs) | Grade | Standard | Finish | Source Sheet | Source View/Detail | Flag |
+| :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
 Sort order: Type -> Source Sheet -> Mark/Tag. One row per piece; no aggregation.
+
+COMPLETENESS — MANDATORY, ZERO EXCEPTIONS:
+- Every piece from every uploaded sheet is its own row: primary framing, secondary
+  and misc steel, bracing, connection plates, embeds, anchor rods, bolts, studs.
+- NEVER summarize, sample, or collapse. Do not write "typical", "similar", "etc.",
+  "(x N) typical", "continued", or "remaining items omitted". If a mark repeats,
+  set Qty — never drop the row.
+- If the list is long, KEEP GOING until the final piece is written. Do not stop
+  early or truncate for length.
+- The row count must reconcile with the Per-Sheet Extraction Coverage in Output 1.
+  End this table with one line: Total pieces extracted: [value].
 
 Per-column rules:
 - Type: from the jurisdiction vocabulary —
@@ -1328,18 +1350,16 @@ Per-column rules:
 - Finish: PRIMER | HDG | GALV | NO-PAINT | prep class as noted; absent -> —.
   (Canada HDG -> CSA G164 / A123; Australia HDG -> AS/NZS 4680; class per AS/NZS 2312.)
 - Source Sheet: exact sheet number. Source View/Detail: exact view/detail label.
-- Confidence: HIGH (dimensioned + mark confirmed + grade explicit) | MEDIUM (BOM or
-  grid-computed length, or grade from a note) | LOW (estimated qty, assumed length,
-  or unconfirmed mark).
-- Flag: codes from P-8, pipe-separated, or —.
+- Flag: codes from P-8, pipe-separated, or —. Use ASSUMED on any row whose quantity
+  is estimated, length assumed, or mark unconfirmed, and raise a matching RFI.
 
 ================================================================
 OUTPUT 3 — MTO SUMMARY BY CATEGORY
 ================================================================
 USA:
-| Category | Member Count | Total Length (m) | Total Length (ft) | Est Total Wt (kg) | Est Total Wt (lbs) | Est Total Wt (short tons) | Confidence |
+| Category | Member Count | Total Length (m) | Total Length (ft) | Est Total Wt (kg) | Est Total Wt (lbs) | Est Total Wt (short tons) |
 CANADA / AUSTRALIA:
-| Category | Member Count | Total Length (m) | Est Total Wt (kg) | Est Total Wt (lbs) | Est Total Wt (t) | Confidence |
+| Category | Member Count | Total Length (m) | Est Total Wt (kg) | Est Total Wt (lbs) | Est Total Wt (t) |
 Categories:
   USA       : W-Shapes / HSS-Tube / Pipe / Angles / Channels / Plates /
               Misc-Anchors / PROJECT TOTAL.
@@ -1348,10 +1368,9 @@ Categories:
   AUSTRALIA : UB / UC / PFC-TFC / EA-UA / RHS / SHS / CHS / Plates / Misc-Anchors /
               PROJECT TOTAL.
 Conversions: ft = m / 0.3048; short tons = lbs / 2000; t = kg / 1000; lbs = kg x 2.20462.
-Category Confidence = lowest member confidence in the category. Totals are carried
-from Output 2, never re-estimated. End with each on its own line: total project
-tonnage; misc/secondary tonnage; combined weight; overall weight confidence;
-largest single item by weight (Mark | Profile | Est Wt kg | Est Wt lbs).
+Totals are carried from Output 2, never re-estimated. End with each on its own line:
+total project tonnage; misc/secondary tonnage; combined weight; largest single item
+by weight (Mark | Profile | Est Wt kg | Est Wt lbs).
 
 ================================================================
 OUTPUT 4 — RECONCILIATION REGISTER
@@ -1542,7 +1561,7 @@ STEP 0 — CALCULATION MANIFEST  (output first; fill every placeholder)
 | Currency | [USD / CAD / AUD] |
 | Piece-Count Subtotal Hrs (Low) | [SUBTOTAL_LOW] hrs |
 | Piece-Count Subtotal Hrs (High) | [SUBTOTAL_HIGH] hrs |
-| Confidence Level | [High / Medium / Low] |
+| Information Completeness | [Complete / Partial / Limited] |
 | Risk Buffer % Applied | [0 / 10 / 15 / 20 / 30]% |
 | Buffer Hrs (Low) | +[BUF_LOW] hrs |
 | Buffer Hrs (High) | +[BUF_HIGH] hrs |
@@ -1560,7 +1579,7 @@ STEP 0 — CALCULATION MANIFEST  (output first; fill every placeholder)
 - Region | Project Name / ID
 - Total Estimated Hours: [LOCK_HRS_LOW] - [LOCK_HRS_HIGH] hrs
 - Total Estimated Cost ([CURRENCY]): [CURRENCY] [LOCK_COST_LOW] - [CURRENCY] [LOCK_COST_HIGH]
-- Confidence Level: [High / Medium / Low] + 2-3 specific reasons
+- Information Completeness: [Complete / Partial / Limited] + 2-3 specific reasons
 - Top 3 risks, each with the hour impact if it materializes (e.g. "Connection
   type unshown on Grids 3-7; if moment frame, +45 hrs")
 
@@ -1675,9 +1694,9 @@ PM/Coordination 5-10%. The SUBTOTAL row equals the Section 3 subtotal exactly
 (both Low and High).
 
 ================================================================
-## 5. CONFIDENCE ASSESSMENT
+## 5. ESTIMATE BASIS & COMPLETENESS CHECK
 ================================================================
-Confidence Level: [High / Medium / Low]
+Information Completeness: [Complete / Partial / Limited]
 Six-item checklist (mark each):
   [ ] All member quantities explicitly counted on the drawings.
   [ ] Connection types detailed or called out (not assumed throughout).
@@ -1685,15 +1704,15 @@ Six-item checklist (mark each):
   [ ] Drawings recent (IFC or equivalent), internally coordinated.
   [ ] No significant missing, conflicting, or illegible information.
   [ ] All assumptions reasonable and documented.
-Criteria met: [n] of 6.  Rule: 6/6 High | 4-5 Medium | <=3 Low.
+Criteria met: [n] of 6.  Rule: 6/6 Complete | 4-5 Partial | <=3 Limited.
 For each unchecked item state: (a) what is missing/assumed, (b) the Section 3
 assumption made, (c) the hour impact if the assumption proves wrong.
 
 ================================================================
 ## 6. RISK BUFFER & ADJUSTED HOURS
 ================================================================
-Buffer schedule: High 0% | Medium 10% standard (15% if multiple or high-impact
-gaps) | Low 20% standard (30% if critical information is absent).
+Buffer schedule: Complete 0% | Partial 10% standard (15% if multiple or high-impact
+gaps) | Limited 20% standard (30% if critical information is absent).
 | Row | Low Hrs | High Hrs |
 | :-- | :-- | :-- |
 Rows: Section 3 Subtotal | Risk Buffer ([BUF_%]%) | **ADJUSTED TOTAL HOURS**.

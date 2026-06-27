@@ -462,14 +462,60 @@ async def _run_single_batch(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _merge_batch_outputs(outputs: list[str], total_batches: int) -> str:
-    """Merge multiple file-batch outputs into one coherent report."""
+    """Deterministic fallback merge — used only if the LLM consolidation pass fails.
+
+    No 'file batch' headers: drawings are split into batches purely for upload-size
+    reasons, so the client never sees batching artefacts. Sections are concatenated
+    with a simple rule between them.
+    """
     if len(outputs) == 1:
         return outputs[0]
+    return "\n\n---\n\n".join(o.strip() for o in outputs if o and o.strip())
 
-    parts = [f"# COMBINED ANALYSIS REPORT ({total_batches} file batches)\n"]
-    for i, out in enumerate(outputs, 1):
-        parts.append(f"\n\n---\n## FILE BATCH {i} OF {total_batches}\n\n{out}")
-    return "".join(parts)
+
+async def _consolidate_outputs(
+    *,
+    client: genai.Client,
+    model_name: str,
+    system_prompt: str,
+    outputs: list[str],
+    session_id: str,
+) -> str:
+    """Merge per-batch outputs into ONE coherent report via a final model pass.
+
+    Each batch covered a different subset of the project's drawings. We ask the model
+    to fuse them into a single professional deliverable: one set of headings, unified
+    and de-duplicated tables, and project totals reconciled across all batches.
+    """
+    joined = "\n\n".join(
+        f"<<<PARTIAL ANALYSIS {i}>>>\n{out.strip()}"
+        for i, out in enumerate(outputs, 1)
+        if out and out.strip()
+    )
+    instruction = (
+        "The text below contains several PARTIAL analyses. Each partial covers a "
+        "different subset of the SAME project's drawings (the drawing set was split "
+        "only to respect upload limits). Merge them into ONE single, coherent, "
+        "professional report.\n\n"
+        "Strict requirements:\n"
+        "- Produce a single set of section headings — never repeat a heading per partial.\n"
+        "- Consolidate and de-duplicate every table, register and list into unified tables.\n"
+        "- Reconcile and SUM all quantities, tonnage, counts and costs across the partials "
+        "into single project-level totals.\n"
+        "- Preserve every distinct member, sheet, line item and finding — lose nothing.\n"
+        "- Never mention 'batch', 'partial', 'subset' or that the work was split.\n"
+        "- Keep the exact section structure, tables, tone and formatting the mode requires.\n"
+        "Output only the final merged report.\n\n"
+        f"{joined}"
+    )
+    return await _generate_with_continuation(
+        client=client,
+        model_name=model_name,
+        system_prompt=system_prompt,
+        initial_parts=[types.Part(text=instruction)],
+        session_id=session_id,
+        label="consolidation",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -549,7 +595,28 @@ async def run_analysis(
                 )
                 batch_outputs.append(output)
 
-            final_output = _merge_batch_outputs(batch_outputs, len(batches))
+            if len(batch_outputs) == 1:
+                final_output = batch_outputs[0]
+            else:
+                # Multiple file batches — fuse into a single coherent report.
+                try:
+                    final_output = await _consolidate_outputs(
+                        client=client,
+                        model_name=model_name,
+                        system_prompt=system_prompt,
+                        outputs=batch_outputs,
+                        session_id=session_id,
+                    )
+                    logger.info(
+                        "consolidation_complete model=%s session=%s batches=%d",
+                        model_name, session_id, len(batches),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "consolidation_failed model=%s session=%s error=%s — using deterministic merge",
+                        model_name, session_id, exc,
+                    )
+                    final_output = _merge_batch_outputs(batch_outputs, len(batches))
 
             logger.info(
                 "run_analysis_complete model=%s session=%s file_batches=%d",

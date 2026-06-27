@@ -1,6 +1,7 @@
 """Authentication routes: signup, verify-otp, login, forgot/reset password, refresh, me."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -38,6 +39,11 @@ from security import (
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+async def _send_email_async(to: str, subject: str, html: str, text: str) -> bool:
+    """Run the blocking email send off the event loop. Returns delivery success."""
+    return await asyncio.to_thread(send_email, to, subject, html, text)
 
 
 def _public_user(u: dict) -> dict:
@@ -116,7 +122,12 @@ async def signup(data: SignupRequest):
     await db.users.insert_one(user)
 
     subj, html, text = render_otp_email(data.first_name, otp, "signup")
-    send_email(data.email, subj, html, text)
+    sent = await _send_email_async(data.email, subj, html, text)
+    if not sent:
+        raise HTTPException(
+            status_code=502,
+            detail="We couldn't send your verification code right now. Please try again in a moment.",
+        )
 
     return {
         "message": "We sent a 6-digit verification code to your email.",
@@ -194,7 +205,12 @@ async def login(data: LoginRequest, request: Request):
             },
         )
         subj, html, text = render_otp_email(user["first_name"], otp, "signup")
-        send_email(user["email"], subj, html, text)
+        sent = await _send_email_async(user["email"], subj, html, text)
+        if not sent:
+            raise HTTPException(
+                status_code=502,
+                detail="We couldn't send your verification code right now. Please try again in a moment.",
+            )
         return {
             "mfa_required": True,
             "message": "Please verify your email. We sent a new code.",
@@ -250,7 +266,8 @@ async def forgot_password(data: ForgotPasswordRequest):
     )
 
     subj, html, text = render_otp_email(user["first_name"], otp, "reset")
-    send_email(user["email"], subj, html, text)
+    # Generic response regardless of delivery to avoid email enumeration; failures are logged.
+    await _send_email_async(user["email"], subj, html, text)
     return {
         "message": "If that email exists, a reset code has been sent.",
         "reset_token": reset_token,
@@ -307,7 +324,7 @@ async def reset_password(data: ResetPasswordRequest, request: Request):
     await _audit(db, user["id"], "password_reset", "user", user["id"], request)
 
     subj, html, text = render_password_changed_email(user["first_name"])
-    send_email(user["email"], subj, html, text)
+    await _send_email_async(user["email"], subj, html, text)
     return {"message": "Password reset successful. You can now sign in with your new password."}
 
 
@@ -339,7 +356,12 @@ async def change_password(
             },
         )
         subj, html, text = render_otp_email(user["first_name"], otp, "change")
-        send_email(user["email"], subj, html, text)
+        sent = await _send_email_async(user["email"], subj, html, text)
+        if not sent:
+            raise HTTPException(
+                status_code=502,
+                detail="We couldn't send your verification code right now. Please try again in a moment.",
+            )
         return {"otp_required": True, "message": "We sent a verification code to confirm this change."}
 
     if hash_otp(data.otp.strip()) != full.get("otp_hash") or full.get("otp_purpose") != "change":
@@ -360,7 +382,7 @@ async def change_password(
     )
     await _audit(db, user["id"], "password_change", "user", user["id"], request)
     subj, html, text = render_password_changed_email(user["first_name"])
-    send_email(user["email"], subj, html, text)
+    await _send_email_async(user["email"], subj, html, text)
     return {"message": "Password changed successfully."}
 
 
@@ -401,7 +423,12 @@ async def resend_otp(payload: dict):
         },
     )
     subj, html, text = render_otp_email(user["first_name"], otp, purpose)
-    send_email(user["email"], subj, html, text)
+    sent = await _send_email_async(user["email"], subj, html, text)
+    if not sent:
+        raise HTTPException(
+            status_code=502,
+            detail="We couldn't send your verification code right now. Please try again in a moment.",
+        )
     return {"message": "New code sent."}
 
 

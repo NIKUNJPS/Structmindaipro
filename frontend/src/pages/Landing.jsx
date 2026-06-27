@@ -37,7 +37,7 @@ import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 
 const STATS = [
-    { k: "25", l: "AI Analysis Modes" },
+    { k: "25", l: "Analysis Modes" },
     { k: "500 MB", l: "Drawing Packages" },
     { k: "< 2 min", l: "To Full Report" },
     { k: "95%+", l: "QC Accuracy" },
@@ -123,7 +123,7 @@ const PRICES = [
         plan: "Starter",
         price: "$49",
         cadence: "per month",
-        body: ["30 analyses / month", "50 MB files", "15 core AI modes", "PDF · Word · CSV export"],
+        body: ["30 analyses / month", "50 MB files", "15 core modes", "PDF · Word · CSV export"],
         cta: "Go Starter",
     },
     {
@@ -134,7 +134,7 @@ const PRICES = [
         body: [
             "150 analyses / month",
             "200 MB files",
-            "All 25 AI modes",
+            "All 25 modes",
             "All export formats",
             "Priority queue · API access",
         ],
@@ -162,7 +162,7 @@ const TESTIMONIALS = [
         country: "USA",
     },
     {
-        quote: "Finally an AI that speaks fabricator. The NC1 checker caught three hole-pattern errors that would have been scrapped on the shop floor.",
+        quote: "Finally a platform that speaks fabricator. The NC1 checker caught three hole-pattern errors that would have been scrapped on the shop floor.",
         name: "Aisling Murphy",
         role: "Fab Ops Lead · Auckland Structures",
         country: "NZ",
@@ -187,7 +187,7 @@ export default function Landing() {
                     <Logo variant="dark" size="md" />
                     <nav className="hidden items-center gap-8 font-heading text-sm uppercase tracking-[0.16em] text-ink-muted md:flex">
                         <a href="#features" className="hover:text-navy">Features</a>
-                        <a href="#modes" className="hover:text-navy">AI Modes</a>
+                        <a href="#modes" className="hover:text-navy">Modes</a>
                         <a href="#pricing" className="hover:text-navy">Pricing</a>
                         <a href="#about" className="hover:text-navy">About</a>
                     </nav>
@@ -238,12 +238,12 @@ export default function Landing() {
                         <h1 className="font-heading text-[56px] font-black leading-[0.95] tracking-tight text-white md:text-[92px]">
                             Struct<span className="text-gold">Mind</span>
                             <span className="block font-mono text-sm font-medium uppercase tracking-[0.3em] text-white/70 md:text-base">
-                                Structural Intelligence · 4X Neural Core Engine
+                                Structural Intelligence · 4X Core Engine
                             </span>
                         </h1>
                         <p className="mt-8 max-w-xl font-heading text-xl font-light leading-snug text-white/80 md:text-2xl">
-                            The world's most advanced AI platform for structural steel
-                            detailing, estimation, and fabrication intelligence.
+                            The most advanced platform for structural steel
+                            detailing, estimation, and fabrication.
                         </p>
                         <p className="mt-6 max-w-xl text-base leading-relaxed text-white/70">
                             Drop a 500 MB drawing package. Pick your persona. Get a
@@ -391,7 +391,7 @@ export default function Landing() {
                                 no: "02",
                                 icon: Sparkles,
                                 title: "Select Mode",
-                                body: "Pick from 25 AI modes — from Full Project Audit to Connection Design Advisor.",
+                                body: "Pick from 25 modes — from Full Project Audit to Connection Design Advisor.",
                             },
                             {
                                 no: "03",
@@ -436,7 +436,7 @@ export default function Landing() {
                         </div>
                         <div className="md:col-span-7">
                             <p className="text-lg leading-relaxed text-ink-muted">
-                                StructMind AI was built by fabricators and detailers who were
+                                STRUCTMIND was built by fabricators and detailers who were
                                 tired of toggling between drawings, spreadsheets, and code
                                 books. Every feature below is production-grade — today.
                             </p>
@@ -476,10 +476,10 @@ export default function Landing() {
                 <div className="container-steel">
                     <div className="mb-12 flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
                         <div>
-                            <span className="text-overline">25 AI Modes</span>
+                            <span className="text-overline">25 Modes</span>
                             <h2 className="mt-3 font-heading text-4xl font-black uppercase tracking-tight text-navy md:text-5xl">
                                 The most comprehensive<br />
-                                <span className="text-gold">detailing AI library.</span>
+                                <span className="text-gold">detailing library.</span>
                             </h2>
                         </div>
                         <p className="max-w-md text-ink-muted">
@@ -566,7 +566,7 @@ export default function Landing() {
                                         Capability
                                     </th>
                                     <th className="px-6 py-4 font-heading text-sm uppercase tracking-wider text-gold">
-                                        StructMind AI
+                                        STRUCTMIND
                                     </th>
                                     <th className="px-6 py-4 font-heading text-sm uppercase tracking-wider text-white/60">
                                         Legacy tools
@@ -746,7 +746,7 @@ export default function Landing() {
                     <div className="md:col-span-5">
                         <Logo variant="dark" size="md" />
                         <p className="mt-4 max-w-md text-sm leading-relaxed text-ink-muted">
-                            StructMind AI is the structural-steel intelligence platform by
+                            STRUCTMIND is the structural-steel intelligence platform by
                             4XStruct Inc. Built for fabricators, detailers, engineers,
                             estimators, project managers, and modular specialists.
                         </p>
@@ -755,7 +755,7 @@ export default function Landing() {
                         <div className="text-overline">Product</div>
                         <ul className="mt-4 space-y-2 font-mono text-xs uppercase tracking-wider text-ink-muted">
                             <li><a href="#features" className="hover:text-navy">Features</a></li>
-                            <li><a href="#modes" className="hover:text-navy">AI Modes</a></li>
+                            <li><a href="#modes" className="hover:text-navy">Modes</a></li>
                             <li><a href="#pricing" className="hover:text-navy">Pricing</a></li>
                         </ul>
                     </div>
