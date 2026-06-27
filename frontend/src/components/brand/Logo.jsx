@@ -40,7 +40,7 @@ export function Logo({ variant = "dark", size = "md", className = "" }) {
                         isLight ? "text-white/60" : "text-ink-muted"
                     } ${s.sub}`}
                 >
-                    4XStruct
+                    4XStruct-INC
                 </span>
             </div>
         </div>
