@@ -27,6 +27,8 @@ import asyncio
 import json
 import logging
 import os
+import shutil
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Iterable
@@ -61,6 +63,14 @@ ENGINE_LABELS: dict[str, str] = {
 
 MAX_BATCH_MB       = 45.0   # max total MB per Gemini Files API request
 MAX_FILES_PER_BATCH = 6     # max files per Gemini Files API request
+
+# Gemini rejects a request outright (400 INVALID_ARGUMENT) once the combined
+# PDF page count crosses its hard per-request document limit (1,000 pages).
+# A single large drawing-set PDF must therefore be split into page-range
+# chunks BEFORE batching — file-count/size batching alone does not help when
+# the whole problem is ONE oversized PDF.
+MAX_PDF_PAGES_PER_CHUNK = 500   # pages per split chunk (safe margin under 1,000)
+MAX_PAGES_PER_BATCH     = 900   # total pages allowed per Gemini request (all files combined)
 
 # Output token budget.
 # Gemini 2.5 Pro and Flash both support up to 65 536 output tokens.
@@ -122,6 +132,65 @@ def _get_client() -> genai.Client:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# PDF page splitting — keeps every request under Gemini's per-document /
+# per-request page limit without dropping a single page.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _pdf_page_count(file_path: str) -> int:
+    """Return the page count of a PDF, or 0 if it can't be read (non-PDF,
+    corrupt, encrypted). Callers must treat 0 as 'unknown' — not empty."""
+    try:
+        from pypdf import PdfReader
+        return len(PdfReader(file_path).pages)
+    except Exception as exc:
+        logger.warning("pdf_page_count_failed path=%s error=%s", file_path, exc)
+        return 0
+
+
+def _split_pdf_if_needed(
+    file_path: str, mime_type: str, scratch_dir: str,
+) -> list[tuple[str, str]]:
+    """
+    If `file_path` is a PDF larger than MAX_PDF_PAGES_PER_CHUNK pages, split it
+    into contiguous page-range chunks (lossless — every page is preserved
+    exactly, nothing is summarised or dropped) and return the chunk paths.
+    Otherwise return the file unchanged.
+    """
+    if mime_type != "application/pdf":
+        return [(file_path, mime_type)]
+
+    page_count = _pdf_page_count(file_path)
+    if page_count <= MAX_PDF_PAGES_PER_CHUNK:
+        return [(file_path, mime_type)]
+
+    try:
+        from pypdf import PdfReader, PdfWriter
+        reader = PdfReader(file_path)
+        base = os.path.splitext(os.path.basename(file_path))[0]
+        chunks: list[tuple[str, str]] = []
+        for start in range(0, page_count, MAX_PDF_PAGES_PER_CHUNK):
+            end = min(start + MAX_PDF_PAGES_PER_CHUNK, page_count)
+            writer = PdfWriter()
+            for p in range(start, end):
+                writer.add_page(reader.pages[p])
+            chunk_path = os.path.join(scratch_dir, f"{base}_p{start + 1}-{end}.pdf")
+            with open(chunk_path, "wb") as fh:
+                writer.write(fh)
+            chunks.append((chunk_path, mime_type))
+        logger.info(
+            "pdf_split path=%s total_pages=%d chunks=%d chunk_size=%d",
+            file_path, page_count, len(chunks), MAX_PDF_PAGES_PER_CHUNK,
+        )
+        return chunks
+    except Exception as exc:
+        logger.warning(
+            "pdf_split_failed path=%s pages=%d error=%s — sending unsplit",
+            file_path, page_count, exc,
+        )
+        return [(file_path, mime_type)]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # File batching
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -129,8 +198,8 @@ def _build_batches(
     file_paths: list[tuple[str, str]],
 ) -> list[list[tuple[str, str]]]:
     """
-    Split file_paths into batches that each stay under MAX_BATCH_MB and
-    MAX_FILES_PER_BATCH.  Largest files first.
+    Split file_paths into batches that each stay under MAX_BATCH_MB,
+    MAX_FILES_PER_BATCH and MAX_PAGES_PER_BATCH.  Largest files first.
     """
     sorted_files = sorted(
         file_paths,
@@ -140,34 +209,61 @@ def _build_batches(
 
     batches: list[list[tuple[str, str]]] = []
     batch_sizes: list[float] = []
+    batch_pages: list[int] = []
 
     for fp, mime in sorted_files:
         if not os.path.exists(fp):
             logger.warning("file_not_found path=%s", fp)
             continue
         size_mb = os.path.getsize(fp) / (1_024 * 1_024)
+        pages = _pdf_page_count(fp) if mime == "application/pdf" else 0
 
         placed = False
         for i, batch in enumerate(batches):
             if (
                 len(batch) < MAX_FILES_PER_BATCH
                 and batch_sizes[i] + size_mb <= MAX_BATCH_MB
+                and batch_pages[i] + pages <= MAX_PAGES_PER_BATCH
             ):
                 batch.append((fp, mime))
                 batch_sizes[i] += size_mb
+                batch_pages[i] += pages
                 placed = True
                 break
 
         if not placed:
             batches.append([(fp, mime)])
             batch_sizes.append(size_mb)
+            batch_pages.append(pages)
 
-    for i, (batch, sz) in enumerate(zip(batches, batch_sizes)):
+    for i, (batch, sz, pg) in enumerate(zip(batches, batch_sizes, batch_pages)):
         logger.info(
-            "file_batch batch=%d/%d files=%d size_mb=%.1f",
-            i + 1, len(batches), len(batch), sz,
+            "file_batch batch=%d/%d files=%d size_mb=%.1f pages=%d",
+            i + 1, len(batches), len(batch), sz, pg,
         )
     return batches
+
+
+def prepare_file_batches(
+    file_paths: list[tuple[str, str]],
+) -> tuple[list[list[tuple[str, str]]], str | None]:
+    """
+    Full pre-flight: split any oversized single PDF into page-safe chunks,
+    then group everything into upload-safe batches.
+
+    Returns (batches, scratch_dir). If scratch_dir is not None the caller
+    MUST shutil.rmtree it (ignore_errors=True) once every batch has been
+    uploaded — it holds the temporary split-PDF chunks.
+    """
+    if not file_paths:
+        return [[]], None
+
+    scratch_dir = tempfile.mkdtemp(prefix="structmind_split_")
+    expanded: list[tuple[str, str]] = []
+    for fp, mime in file_paths:
+        expanded.extend(_split_pdf_if_needed(fp, mime, scratch_dir))
+
+    return _build_batches(expanded), scratch_dir
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -554,12 +650,10 @@ async def run_analysis(
     last_err: Exception | None = None
     file_paths_list = list(file_paths)
 
-    # Build file batches once — reused across model fallback attempts
-    if file_paths_list:
-        batches = _build_batches(file_paths_list)
-    else:
-        # Text-only: one empty batch (no file upload)
-        batches = [[]]
+    # Build file batches once — reused across model fallback attempts.
+    # Any single oversized PDF is transparently split into page-safe chunks
+    # here (see prepare_file_batches) so the client never sees the split.
+    batches, scratch_dir = prepare_file_batches(file_paths_list)
 
     logger.info(
         "run_analysis_start session=%s total_files=%d total_file_batches=%d "
@@ -567,72 +661,76 @@ async def run_analysis(
         session_id, len(file_paths_list), len(batches), chunk_sections,
     )
 
-    # ── Model fallback loop ───────────────────────────────────────────────────
-    for model_name in MODEL_CHAIN:
-        try:
-            logger.info(
-                "model_attempt model=%s session=%s", model_name, session_id
-            )
-            # One client per run_analysis call
-            client = _get_client()
-            batch_outputs: list[str] = []
-
-            for i, batch in enumerate(batches, 1):
+    try:
+        # ── Model fallback loop ───────────────────────────────────────────────
+        for model_name in MODEL_CHAIN:
+            try:
                 logger.info(
-                    "file_batch_start batch=%d/%d model=%s session=%s",
-                    i, len(batches), model_name, session_id,
+                    "model_attempt model=%s session=%s", model_name, session_id
                 )
-                output = await _run_single_batch(
-                    client=client,
-                    model_name=model_name,
-                    system_prompt=system_prompt,
-                    user_text=user_text,
-                    batch_files=batch,
-                    batch_num=i,
-                    total_batches=len(batches),
-                    session_id=session_id,
-                    chunk_sections=chunk_sections,
-                )
-                batch_outputs.append(output)
+                # One client per run_analysis call
+                client = _get_client()
+                batch_outputs: list[str] = []
 
-            if len(batch_outputs) == 1:
-                final_output = batch_outputs[0]
-            else:
-                # Multiple file batches — fuse into a single coherent report.
-                try:
-                    final_output = await _consolidate_outputs(
+                for i, batch in enumerate(batches, 1):
+                    logger.info(
+                        "file_batch_start batch=%d/%d model=%s session=%s",
+                        i, len(batches), model_name, session_id,
+                    )
+                    output = await _run_single_batch(
                         client=client,
                         model_name=model_name,
                         system_prompt=system_prompt,
-                        outputs=batch_outputs,
+                        user_text=user_text,
+                        batch_files=batch,
+                        batch_num=i,
+                        total_batches=len(batches),
                         session_id=session_id,
+                        chunk_sections=chunk_sections,
                     )
-                    logger.info(
-                        "consolidation_complete model=%s session=%s batches=%d",
-                        model_name, session_id, len(batches),
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "consolidation_failed model=%s session=%s error=%s — using deterministic merge",
-                        model_name, session_id, exc,
-                    )
-                    final_output = _merge_batch_outputs(batch_outputs, len(batches))
+                    batch_outputs.append(output)
 
-            logger.info(
-                "run_analysis_complete model=%s session=%s file_batches=%d",
-                model_name, session_id, len(batches),
-            )
-            return final_output, engine_label(model_name)
+                if len(batch_outputs) == 1:
+                    final_output = batch_outputs[0]
+                else:
+                    # Multiple file batches — fuse into a single coherent report.
+                    try:
+                        final_output = await _consolidate_outputs(
+                            client=client,
+                            model_name=model_name,
+                            system_prompt=system_prompt,
+                            outputs=batch_outputs,
+                            session_id=session_id,
+                        )
+                        logger.info(
+                            "consolidation_complete model=%s session=%s batches=%d",
+                            model_name, session_id, len(batches),
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "consolidation_failed model=%s session=%s error=%s — using deterministic merge",
+                            model_name, session_id, exc,
+                        )
+                        final_output = _merge_batch_outputs(batch_outputs, len(batches))
 
-        except Exception as exc:
-            last_err = exc
-            logger.warning(
-                "model_failed model=%s session=%s error=%s",
-                model_name, session_id, exc,
-            )
-            continue
+                logger.info(
+                    "run_analysis_complete model=%s session=%s file_batches=%d",
+                    model_name, session_id, len(batches),
+                )
+                return final_output, engine_label(model_name)
 
-    raise RuntimeError(
-        f"All STRUCTMIND CORE tiers failed for session={session_id}. "
-        f"Last error: {last_err}"
-    )
+            except Exception as exc:
+                last_err = exc
+                logger.warning(
+                    "model_failed model=%s session=%s error=%s",
+                    model_name, session_id, exc,
+                )
+                continue
+
+        raise RuntimeError(
+            f"All STRUCTMIND CORE tiers failed for session={session_id}. "
+            f"Last error: {last_err}"
+        )
+    finally:
+        if scratch_dir:
+            shutil.rmtree(scratch_dir, ignore_errors=True)

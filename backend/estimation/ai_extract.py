@@ -11,10 +11,20 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shutil
 from typing import Iterable
 
+from google.genai import types
+
 from config import settings
-from gemini_service import MODEL_CHAIN, engine_label, _get_client
+from gemini_service import (
+    MODEL_CHAIN,
+    _cleanup_files,
+    _get_client,
+    _upload_files,
+    engine_label,
+    prepare_file_batches,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +123,35 @@ def _extract_json(text: str) -> dict:
     return json.loads(json_blob)
 
 
+# Numeric fields are additive across batches (each batch covers a different
+# subset of the drawing set); everything else is taken from the first batch.
+_SUM_FIELDS = (
+    "tonnage", "members_counted", "drawings_seen",
+    "total_hours", "drawings", "connections",
+)
+
+
+def _combine_extractions(dicts: list[dict]) -> dict:
+    """Deterministically fold per-batch extraction JSON into one result.
+
+    No LLM merge pass — these are locked numeric figures, so batches are
+    summed directly (never sampled, never dropped) to preserve accuracy.
+    """
+    if len(dicts) == 1:
+        return dicts[0]
+
+    combined = dict(dicts[0])
+    for key in _SUM_FIELDS:
+        if any(key in d for d in dicts):
+            combined[key] = round(sum(float(d.get(key, 0) or 0) for d in dicts), 2)
+
+    notes = [d.get("notes") for d in dicts if d.get("notes")]
+    if notes:
+        combined["notes"] = " | ".join(notes)
+
+    return combined
+
+
 # ─────────────────────────────────────────────────────────────
 # MAIN FUNCTION
 # ─────────────────────────────────────────────────────────────
@@ -127,11 +166,16 @@ async def extract_quantities(
     """
     Extract quantities from drawings using Gemini.
 
+    Large drawing sets are split into page/size-safe batches (same logic as
+    the main analysis pipeline) so a single oversized PDF can't blow past
+    Gemini's per-request document limit. Batch results are summed
+    deterministically into one locked figure.
+
     Returns:
         (data, engine_label)
     """
-
-    if not file_paths:
+    file_paths_list = list(file_paths)
+    if not file_paths_list:
         raise ValueError(
             "Upload at least one drawing to run AI estimation."
         )
@@ -148,7 +192,7 @@ async def extract_quantities(
         )
 
     user_prompt = """
-Analyze all uploaded drawings/files.
+Analyze all uploaded drawings/files in this batch.
 
 Return ONLY the JSON object requested in the system prompt.
 
@@ -157,68 +201,66 @@ No explanation.
 No extra text.
 """
 
+    batches, scratch_dir = prepare_file_batches(file_paths_list)
     last_err: Exception | None = None
-    client = _get_client()  # service-account or API-key aware; created on demand
 
-    for model_name in MODEL_CHAIN:
+    try:
+        for model_name in MODEL_CHAIN:
+            try:
+                logger.info(
+                    "AI estimate extraction · tier=%s · session=%s · batches=%d",
+                    model_name, session_id, len(batches),
+                )
+                client = _get_client()
+                batch_results: list[dict] = []
 
-        try:
-            logger.info(
-                "AI estimate extraction · tier=%s · session=%s",
-                model_name,
-                session_id,
-            )
+                for i, batch in enumerate(batches, 1):
+                    uploaded_files = await _upload_files(client, batch) if batch else []
+                    try:
+                        file_parts = [
+                            types.Part(
+                                file_data=types.FileData(
+                                    file_uri=f.uri, mime_type=f.mime_type,
+                                )
+                            )
+                            for f in uploaded_files
+                        ]
+                        contents = [
+                            types.Content(
+                                role="user",
+                                parts=[types.Part(text=user_prompt)] + file_parts,
+                            )
+                        ]
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=contents,
+                            config=types.GenerateContentConfig(
+                                system_instruction=system_prompt,
+                                temperature=0.0,
+                                max_output_tokens=8192,
+                            ),
+                        )
+                        response_text = (response.text or "").strip()
+                        batch_results.append(_extract_json(response_text))
+                    finally:
+                        if uploaded_files:
+                            _cleanup_files(client, uploaded_files)
 
-            uploaded_files = []
+                data = _combine_extractions(batch_results)
+                return data, engine_label(model_name)
 
-            # Upload files to Gemini
-            for file_path, mime_type in file_paths:
+            except Exception as e:
+                last_err = e
+                logger.warning(
+                    "AI extract tier %s failed: %s",
+                    model_name,
+                    e,
+                )
+                continue
 
-                try:
-                    uploaded_file = client.files.upload(
-                        file=file_path,
-                    )
-
-                    uploaded_files.append(uploaded_file)
-
-                except Exception as file_error:
-                    logger.warning(
-                        "File upload failed for %s: %s",
-                        file_path,
-                        file_error,
-                    )
-
-            # Build content
-            contents = [
-                system_prompt,
-                user_prompt,
-            ]
-
-            contents.extend(uploaded_files)
-
-            # Generate response
-            response = client.models.generate_content(
-                model=model_name,
-                contents=contents,
-            )
-
-            response_text = response.text.strip()
-
-            data = _extract_json(response_text)
-
-            return data, engine_label(model_name)
-
-        except Exception as e:
-            last_err = e
-
-            logger.warning(
-                "AI extract tier %s failed: %s",
-                model_name,
-                e,
-            )
-
-            continue
-
-    raise RuntimeError(
-        f"STRUCTMIND CORE could not extract quantities. Last error: {last_err}"
-    )
+        raise RuntimeError(
+            f"STRUCTMIND CORE could not extract quantities. Last error: {last_err}"
+        )
+    finally:
+        if scratch_dir:
+            shutil.rmtree(scratch_dir, ignore_errors=True)
