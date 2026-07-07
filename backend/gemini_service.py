@@ -102,6 +102,9 @@ def engine_label(internal_model: str) -> str:
 
 def _get_credentials():
     """Return fresh service-account credentials, or None."""
+    if os.environ.get("GEMINI_FORCE_API_KEY", "").lower() in ("1", "true", "yes"):
+        logger.info("service_account_skipped reason=GEMINI_FORCE_API_KEY")
+        return None
     sa_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
     if not sa_json:
         return None
