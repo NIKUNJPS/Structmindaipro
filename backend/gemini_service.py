@@ -1,16 +1,46 @@
 """
 LLM service — google.genai with service account authentication.
+Model family: Gemini 3.x  (migrated off Gemini 2.5 — see MIGRATION NOTES below)
 
-KEY FIXES vs previous version
-──────────────────────────────
-1.  max_output_tokens raised to 65 536 (Gemini 2.5 Pro/Flash support up to
-    65 536 output tokens).  This alone fixes the truncated 12-section intake.
+MIGRATION NOTES (Gemini 2.5 → Gemini 3.x)
+──────────────────────────────────────────
+Google is shutting down gemini-2.5-pro on 2026-10-16 (Gemini Developer API).
+This service now runs entirely on the Gemini 3.x family:
+
+  1. MODEL_CHAIN updated:
+       gemini-3.1-pro-preview   — primary. Most capable reasoning model,
+                                  best fit for long structured technical
+                                  reports (MASTER_INTAKE, MTO, ESTIMATION_PRO).
+       gemini-3.5-flash         — first fallback. GA / stable / production-
+                                  ready, replaces the deprecated
+                                  gemini-3-flash-preview.
+       gemini-3.1-flash-lite    — second fallback. GA, cheapest / fastest,
+                                  used only if both above tiers fail.
+  2. thinking_budget → thinking_level. Gemini 3.x replaces the old numeric
+     thinking_budget with a qualitative thinking_level ("low" / "medium" /
+     "high"). Mixing the two params in one request is a 400 error, so the
+     old temperature/	oken-budget style config has been replaced entirely.
+  3. temperature: Google's Gemini 3 guidance is to leave temperature at its
+     default (1.0) — Gemini 3's reasoning is tuned for that default, and
+     overriding it (as the old 2.5 code did with 0.1) measurably hurts
+     output quality. We no longer set temperature explicitly.
+  4. max_output_tokens: unchanged at 65 536 — still the max for both Pro and
+     Flash in the 3.x family, still required for a full 12-section
+     MASTER_INTAKE in one shot.
+  5. Everything else — file batching, PDF page-splitting, continuation-on-
+     truncation, section chunking, multi-batch consolidation — is preserved
+     exactly. This is a model-layer migration only; the orchestration logic
+     that made large multi-file jobs reliable is untouched.
+
+KEY FIXES CARRIED FORWARD FROM THE 2.5 VERSION
+────────────────────────────────────────────────
+1.  max_output_tokens raised to 65 536 — fixes the truncated 12-section intake.
 2.  finish_reason guard: if Gemini returns finish_reason == MAX_TOKENS the
-    response was cut.  We automatically continue with a CONTINUATION prompt
+    response was cut. We automatically continue with a CONTINUATION prompt
     and stitch the pieces together until the model signals STOP.
 3.  Section-chunk mode (SECTION_GROUPS): for MASTER_INTAKE the prompt is split
     into two logical halves (S1-S6, S7-S12) and run as two sequential calls
-    sharing the same uploaded files.  Results are stitched cleanly.
+    sharing the same uploaded files. Results are stitched cleanly.
 4.  Uploaded files are kept alive across ALL model fallback attempts and ALL
     section chunks; deleted only after the entire session succeeds or all
     models fail.
@@ -19,6 +49,8 @@ KEY FIXES vs previous version
 7.  Async-safe: file upload/wait loop is offloaded to a thread pool so the
     event loop is never blocked.
 8.  Structured logging with consistent field names throughout.
+9.  PDF page-splitting keeps every request under Gemini's per-document /
+    per-request page limit without dropping a single page.
 """
 
 from __future__ import annotations
@@ -43,25 +75,51 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Model chain & labels
+# Model chain & labels — Gemini 3.x family
 # ─────────────────────────────────────────────────────────────────────────────
-
+#
+# Ordered by capability first, cost/speed second. Each tier is tried in turn;
+# the first one that returns a non-empty response wins.
+#
+#   gemini-3.1-pro-preview  : Google's most capable reasoning model as of this
+#                             writing. Best for long, structurally strict,
+#                             multi-section technical documents. Still labeled
+#                             "preview" by Google but is the recommended Pro
+#                             tier for production Gemini 3 workloads.
+#   gemini-3.5-flash        : GA, stable, long-term-support Flash model.
+#                             Sustained frontier performance at lower cost —
+#                             the correct fallback for production reliability.
+#   gemini-3.1-flash-lite   : GA, cheapest/fastest tier. Used only if the two
+#                             tiers above both fail (rate limit, outage, etc).
+#
 MODEL_CHAIN: list[str] = [
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
+    "gemini-3.1-pro-preview",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
 ]
 
 ENGINE_LABELS: dict[str, str] = {
-    "gemini-2.5-pro":   "STRUCTMIND CORE · PRO",
-    "gemini-2.5-flash": "STRUCTMIND CORE · FAST",
-    "gemini-2.0-flash": "STRUCTMIND CORE · LITE",
+    "gemini-3.1-pro-preview": "STRUCTMIND CORE · PRO",
+    "gemini-3.5-flash":       "STRUCTMIND CORE · FAST",
+    "gemini-3.1-flash-lite":  "STRUCTMIND CORE · LITE",
+}
+
+# Per-model thinking_level. Gemini 3.x models default to "high" reasoning
+# effort; for our structured, precision-sensitive analysis modes (dimensional
+# math, tonnage calculations, locked-value manifests) we always request the
+# highest available thinking level on every tier, including the lite tier —
+# correctness matters more than shaving latency on a fallback call.
+THINKING_LEVELS: dict[str, str] = {
+    "gemini-3.1-pro-preview": "high",
+    "gemini-3.5-flash":       "high",
+    "gemini-3.1-flash-lite":  "high",
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Tunable limits
 # ─────────────────────────────────────────────────────────────────────────────
 
-MAX_BATCH_MB       = 45.0   # max total MB per Gemini Files API request
+MAX_BATCH_MB        = 45.0  # max total MB per Gemini Files API request
 MAX_FILES_PER_BATCH = 6     # max files per Gemini Files API request
 
 # Gemini rejects a request outright (400 INVALID_ARGUMENT) once the combined
@@ -73,13 +131,14 @@ MAX_PDF_PAGES_PER_CHUNK = 500   # pages per split chunk (safe margin under 1,000
 MAX_PAGES_PER_BATCH     = 900   # total pages allowed per Gemini request (all files combined)
 
 # Output token budget.
-# Gemini 2.5 Pro and Flash both support up to 65 536 output tokens.
-# We use 65 536 to allow a full 12-section MASTER_INTAKE in one shot.
-MAX_OUTPUT_TOKENS  = 65_536
+# Gemini 3.1 Pro Preview, 3.5 Flash, and 3.1 Flash-Lite all support up to
+# 65 536 output tokens. We use the max to allow a full 12-section
+# MASTER_INTAKE in one shot.
+MAX_OUTPUT_TOKENS = 65_536
 
 # If the model still hits the limit (finish_reason == MAX_TOKENS) we issue
-# continuation calls.  Each continuation re-uses the uploaded files.
-MAX_CONTINUATIONS  = 4      # safety cap — avoids infinite loops
+# continuation calls. Each continuation re-uses the uploaded files.
+MAX_CONTINUATIONS = 4       # safety cap — avoids infinite loops
 
 # Section groups for MASTER_INTAKE chunking.
 # Each tuple is (group_label, section_numbers_string_for_prompt).
@@ -98,6 +157,24 @@ _EXECUTOR = ThreadPoolExecutor(max_workers=4)
 
 def engine_label(internal_model: str) -> str:
     return ENGINE_LABELS.get(internal_model, "STRUCTMIND CORE")
+
+
+def _thinking_config_for(model_name: str) -> types.ThinkingConfig:
+    """
+    Build the Gemini 3.x ThinkingConfig for the given model tier.
+
+    Gemini 3.x replaces the old numeric thinking_budget with a qualitative
+    thinking_level. Passing both thinking_level and thinking_budget in the
+    same request is a 400 error, so this is the ONLY thinking-related config
+    field set anywhere in this module.
+    """
+    level_name = THINKING_LEVELS.get(model_name, "high")
+    level_enum = {
+        "low":    types.ThinkingLevel.LOW,
+        "medium": types.ThinkingLevel.MEDIUM,
+        "high":   types.ThinkingLevel.HIGH,
+    }.get(level_name, types.ThinkingLevel.HIGH)
+    return types.ThinkingConfig(thinking_level=level_enum)
 
 
 def _get_credentials():
@@ -202,7 +279,7 @@ def _build_batches(
 ) -> list[list[tuple[str, str]]]:
     """
     Split file_paths into batches that each stay under MAX_BATCH_MB,
-    MAX_FILES_PER_BATCH and MAX_PAGES_PER_BATCH.  Largest files first.
+    MAX_FILES_PER_BATCH and MAX_PAGES_PER_BATCH. Largest files first.
     """
     sorted_files = sorted(
         file_paths,
@@ -279,7 +356,7 @@ def _upload_files_sync(
 ) -> list:
     """
     Upload files to Gemini Files API (blocking).
-    Polls until ACTIVE or FAILED.  Returns list of active file objects.
+    Polls until ACTIVE or FAILED. Returns list of active file objects.
     Called via run_in_executor so the event loop stays free.
     """
     uploaded = []
@@ -366,19 +443,27 @@ def _generate(
     model_name: str,
     system_prompt: str,
     contents: list,
-) -> str:
+) -> tuple[str, bool]:
     """
-    Run a single generate_content call and return the text.
+    Run a single generate_content call and return (text, was_truncated).
     Raises RuntimeError on empty or fully blocked response.
     This is a BLOCKING call — wrap in run_in_executor for async callers.
+
+    Gemini 3.x config notes:
+      - thinking_config uses thinking_level (qualitative), not the legacy
+        numeric thinking_budget — mixing the two raises a 400 error.
+      - temperature is intentionally NOT set. Google's Gemini 3 guidance is
+        to leave temperature at its default (1.0); Gemini 3's reasoning is
+        tuned for that default and overriding it degrades output quality,
+        unlike the 2.5 family where a low temperature helped determinism.
     """
     response = client.models.generate_content(
         model=model_name,
         contents=contents,
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
-            temperature=0.1,
             max_output_tokens=MAX_OUTPUT_TOKENS,
+            thinking_config=_thinking_config_for(model_name),
         ),
     )
     text = (response.text or "").strip()
@@ -397,8 +482,8 @@ async def _generate_with_continuation(
     label: str = "",
 ) -> str:
     """
-    Run generate_content.  If the model hits MAX_TOKENS, send a continuation
-    prompt and stitch the pieces together.  Repeats up to MAX_CONTINUATIONS.
+    Run generate_content. If the model hits MAX_TOKENS, send a continuation
+    prompt and stitch the pieces together. Repeats up to MAX_CONTINUATIONS.
 
     Returns the full stitched text.
     """
@@ -447,9 +532,9 @@ async def _generate_with_continuation(
             "Pick up mid-sentence if needed and complete all remaining sections."
         )
         contents = [
-            types.Content(role="user",    parts=initial_parts),
-            types.Content(role="model",   parts=[types.Part(text=text)]),
-            types.Content(role="user",    parts=[types.Part(text=continuation_instruction)]),
+            types.Content(role="user",  parts=initial_parts),
+            types.Content(role="model", parts=[types.Part(text=text)]),
+            types.Content(role="user",  parts=[types.Part(text=continuation_instruction)]),
         ]
 
     return "\n".join(accumulated)
@@ -475,7 +560,7 @@ async def _run_single_batch(
     Run one Gemini request for a single batch of files.
 
     If chunk_sections=True the call is split into two sequential requests
-    (SECTION_GROUPS) sharing the same uploaded files.  This guarantees
+    (SECTION_GROUPS) sharing the same uploaded files. This guarantees
     all 12 sections are generated even if a single call would be too long.
 
     Returns stitched markdown text.
@@ -631,10 +716,11 @@ async def run_analysis(
 ) -> tuple[str, str]:
     """
     Execute Gemini analysis with:
-      • File batching   — large file sets split into safe-sized batches
+      • File batching    — large file sets split into safe-sized batches
       • Section chunking — optional two-pass mode for long outputs (MASTER_INTAKE)
-      • Continuation    — automatic continuation if output is truncated
-      • Model fallback  — falls through MODEL_CHAIN on any error
+      • Continuation     — automatic continuation if output is truncated
+      • Model fallback   — falls through MODEL_CHAIN (Gemini 3.1 Pro Preview →
+                            Gemini 3.5 Flash → Gemini 3.1 Flash-Lite) on any error
 
     Parameters
     ----------
@@ -660,8 +746,9 @@ async def run_analysis(
 
     logger.info(
         "run_analysis_start session=%s total_files=%d total_file_batches=%d "
-        "chunk_sections=%s",
+        "chunk_sections=%s model_chain=%s",
         session_id, len(file_paths_list), len(batches), chunk_sections,
+        MODEL_CHAIN,
     )
 
     try:
