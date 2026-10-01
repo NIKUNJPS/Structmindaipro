@@ -165,6 +165,26 @@ USER                       BACKEND                              GEMINI 2.5 PRO
 
 ---
 
+## PART 4b · AI analysis engine tuning (`backend/gemini_service.py`)
+
+Large binders are reviewed in small page batches **in parallel**, each batch
+falls back across models on its own, and all batches are merged into **one**
+report (a lossy merge is rejected and retried; a deterministic section-by-section
+merge is the last resort). All knobs are optional env vars:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `GEMINI_MODEL_CHAIN` | `gemini-2.5-pro,gemini-3.1-pro-preview,gemini-3.5-flash,gemini-2.5-flash` | Model order. `gemini-2.5-pro` is dropped automatically from 16 Oct 2026 (Google shutdown); any model that returns 404 is skipped for the rest of the process. |
+| `GEMINI_MAX_PAGES_PER_BATCH` | `40` | Pages per request. Smaller = more detail per drawing. |
+| `GEMINI_MAX_PARALLEL_BATCHES` | `4` | Batches analysed concurrently. Lower it if you hit 429 rate limits. |
+| `GEMINI_MEDIA_RESOLUTION` | `high` | `low` / `medium` / `high` / `default` — high reads small dimensions and marks. |
+| `GEMINI_MAX_CONTINUATIONS` | `6` | Extra calls when a long report hits the output limit. |
+| `GEMINI_MAX_RETRIES` | `3` | Retries on 429 / 5xx / timeouts before falling back to the next model. |
+| `GEMINI_REQUEST_TIMEOUT_S` | `900` | Per-call timeout. |
+| `GEMINI_MIN_CONSOLIDATION_RATIO` | `0.55` | Merged report must keep at least this share of the partials' content. |
+
+---
+
 ## PART 5 · Test credentials
 
 **Seeded super admins (auto-created on first boot):**

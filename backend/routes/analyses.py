@@ -5,6 +5,7 @@ for granular feature gating (mode access, monthly cap, export format, file size,
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -178,7 +179,8 @@ async def _run_analysis_task(analysis_id: str):
         "model_used": model_used,
         "blockchain_hash": output_hash,
     }
-    exports = generate_all_exports(output, export_meta)
+    # CPU-heavy (PDF/DOCX/XLSX of a long report) — keep the event loop free.
+    exports = await asyncio.to_thread(generate_all_exports, output, export_meta)
 
     await db.analyses.update_one(
         {"id": analysis_id},

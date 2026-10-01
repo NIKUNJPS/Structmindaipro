@@ -8,6 +8,7 @@ Returns a deterministic dict that the calculator can consume.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -18,11 +19,14 @@ from google.genai import types
 
 from config import settings
 from gemini_service import (
-    MODEL_CHAIN,
-    _cleanup_files,
+    MAX_PARALLEL_BATCHES,
+    _active_models,
+    _cleanup_files_async,
+    _file_parts,
     _get_client,
     _upload_files,
     engine_label,
+    generate_once,
     prepare_file_batches,
 )
 
@@ -202,65 +206,61 @@ No extra text.
 """
 
     batches, scratch_dir = prepare_file_batches(file_paths_list)
-    last_err: Exception | None = None
+    client = _get_client()
+    sem = asyncio.Semaphore(max(1, MAX_PARALLEL_BATCHES))
+
+    async def run_batch(i: int, batch: list[tuple[str, str]]) -> tuple[dict, str]:
+        """Extract one batch, walking the model chain. Files upload once and
+        are reused across models; the SDK call never blocks the event loop."""
+        async with sem:
+            uploaded_files = await _upload_files(client, batch) if batch else []
+            try:
+                contents = [
+                    types.Content(
+                        role="user",
+                        parts=[types.Part(text=user_prompt)] + _file_parts(uploaded_files),
+                    )
+                ]
+                last: Exception | None = None
+                for model_name in _active_models():
+                    try:
+                        text, _ = await generate_once(
+                            client=client,
+                            model_name=model_name,
+                            system_prompt=system_prompt,
+                            contents=contents,
+                            max_output_tokens=32_768,
+                            temperature=0.0,
+                            label=f"extract batch={i}/{len(batches)}",
+                        )
+                        return _extract_json(text), model_name
+                    except Exception as e:  # noqa: BLE001
+                        last = e
+                        logger.warning(
+                            "AI extract batch %d tier %s failed: %s", i, model_name, e,
+                        )
+                raise RuntimeError(f"batch {i} failed on every tier: {last}")
+            finally:
+                await _cleanup_files_async(client, uploaded_files)
 
     try:
-        for model_name in MODEL_CHAIN:
-            try:
-                logger.info(
-                    "AI estimate extraction · tier=%s · session=%s · batches=%d",
-                    model_name, session_id, len(batches),
-                )
-                client = _get_client()
-                batch_results: list[dict] = []
-
-                for i, batch in enumerate(batches, 1):
-                    uploaded_files = await _upload_files(client, batch) if batch else []
-                    try:
-                        file_parts = [
-                            types.Part(
-                                file_data=types.FileData(
-                                    file_uri=f.uri, mime_type=f.mime_type,
-                                )
-                            )
-                            for f in uploaded_files
-                        ]
-                        contents = [
-                            types.Content(
-                                role="user",
-                                parts=[types.Part(text=user_prompt)] + file_parts,
-                            )
-                        ]
-                        response = client.models.generate_content(
-                            model=model_name,
-                            contents=contents,
-                            config=types.GenerateContentConfig(
-                                system_instruction=system_prompt,
-                                temperature=0.0,
-                                max_output_tokens=8192,
-                            ),
-                        )
-                        response_text = (response.text or "").strip()
-                        batch_results.append(_extract_json(response_text))
-                    finally:
-                        if uploaded_files:
-                            _cleanup_files(client, uploaded_files)
-
-                data = _combine_extractions(batch_results)
-                return data, engine_label(model_name)
-
-            except Exception as e:
-                last_err = e
-                logger.warning(
-                    "AI extract tier %s failed: %s",
-                    model_name,
-                    e,
-                )
-                continue
-
-        raise RuntimeError(
-            f"STRUCTMIND CORE could not extract quantities. Last error: {last_err}"
+        logger.info(
+            "AI estimate extraction · session=%s · batches=%d · chain=%s",
+            session_id, len(batches), _active_models(),
         )
+        results = await asyncio.gather(
+            *[run_batch(i, b) for i, b in enumerate(batches, 1)],
+            return_exceptions=True,
+        )
+        failed = [r for r in results if isinstance(r, BaseException)]
+        if failed:
+            # A partial sum would under-report tonnage — refuse instead.
+            raise RuntimeError(
+                f"STRUCTMIND CORE could not extract quantities "
+                f"({len(failed)}/{len(batches)} parts failed). Last error: {failed[-1]}"
+            )
+        data = _combine_extractions([r[0] for r in results])
+        return data, engine_label(results[0][1])
     finally:
         if scratch_dir:
             shutil.rmtree(scratch_dir, ignore_errors=True)
