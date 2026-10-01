@@ -1025,7 +1025,9 @@ async def _consolidate_with_fallback(
         logger.warning("consolidation_sectionwise_failed session=%s error=%s", session_id, exc)
 
     total_chars = sum(len(o) for o in outputs if o)
-    models = [preferred_model] + [m for m in _active_models() if m != preferred_model]
+    # One whole-report attempt only: every model tends to summarise a whole
+    # multi-part report the same way, so further retries just add minutes.
+    models = [preferred_model]
     for model_name in models:
         if model_name in _UNAVAILABLE_MODELS:
             continue
