@@ -247,14 +247,45 @@ def _render_fabricator(result: dict, project: str, st: dict) -> list:
             Paragraph("TONNAGE TAKE-OFF", st["h2"]),
             _table(
                 [["Metric", "Value"]] +
+                ([["Net steel (member-by-member)", f"{ex['net_steel_t']:,.3f} t"],
+                  [f"Allowance ({ex.get('allowance_pct') or 0:g}% — {ex.get('allowance_basis', '')})",
+                   f"{ex.get('allowance_t') or 0:,.3f} t"]] if ex.get("net_steel_t") is not None else []) +
                 [["Total fabricated tonnage", f"{ex['tonnage']:,.2f} t"],
-                 ["Distinct members counted", f"{ex['members_counted']:,}"],
-                 ["Primary material",         ex.get("primary_material", "—")],
+                 ["Members counted (excl. plates)", f"{ex['members_counted']:,}"]] +
+                ([["Total pieces / line items", f"{ex['pieces_total']:,} / {ex['line_items']:,}"]]
+                 if ex.get("pieces_total") is not None else []) +
+                [["Primary material",         ex.get("primary_material") or "—"],
                  ["Drawings reviewed",        f"{ex['drawings_seen']:,}"]],
                 st, col_widths=[3.6 * inch, 3.6 * inch],
             ),
             Spacer(1, 0.1 * inch),
-            Paragraph(f"Note: {ex.get('notes','—')}", st["meta"]),
+        ]
+        if ex.get("by_group"):
+            story += [
+                Paragraph("TONNAGE BY CATEGORY", st["h2"]),
+                _table(
+                    [["Category", "Pieces", "Length (m)", "Weight (t)"]] +
+                    [[g["group"], f"{g['pieces']:,}", f"{g['length_m']:,.1f}", f"{g['weight_t']:,.3f}"]
+                     for g in ex["by_group"]] +
+                    [["NET TOTAL", f"{sum(g['pieces'] for g in ex['by_group']):,}",
+                      f"{sum(g['length_m'] for g in ex['by_group']):,.1f}", f"{ex['net_steel_t']:,.3f}"]],
+                    st, col_widths=[3.0 * inch, 1.2 * inch, 1.5 * inch, 1.5 * inch], highlight_last=True,
+                ),
+                Spacer(1, 0.2 * inch),
+            ]
+        if ex.get("by_profile"):
+            story += [
+                Paragraph("TONNAGE BY PROFILE", st["h2"]),
+                _table(
+                    [["Profile", "Pieces", "Length (m)", "kg/m", "Weight (t)"]] +
+                    [[p["profile"], f"{p['pieces']:,}", f"{p['length_m']:,.1f}",
+                      f"{p['unit_kg_m']:,.2f}", f"{p['weight_t']:,.3f}"] for p in ex["by_profile"]],
+                    st, col_widths=[2.4 * inch, 1.0 * inch, 1.3 * inch, 1.1 * inch, 1.4 * inch],
+                ),
+                Spacer(1, 0.2 * inch),
+            ]
+        story += [
+            Paragraph(f"Note: {ex.get('notes') or '—'}", st["meta"]),
             Spacer(1, 0.2 * inch),
 
             Paragraph("USER-PROVIDED RATE BAND", st["h2"]),

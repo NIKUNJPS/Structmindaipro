@@ -5,6 +5,7 @@ for granular feature gating (mode access, monthly cap, export format, file size,
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -17,6 +18,7 @@ from fastapi.responses import FileResponse
 from config import settings
 from db import get_db
 from export_service import EXPORT_DIR, generate_all_exports
+from estimation.takeoff import takeoff_report_markdown, takeoff_summary_markdown
 from gemini_service import run_analysis
 from middleware.permission_guard import (
     audit_log,
@@ -105,22 +107,36 @@ async def _run_analysis_task(analysis_id: str):
         # MTO Engine / Estimation so all modes report the identical figure. Applied to
         # the tonnage-bearing modes for BOTH roles (detailer + fabricator).
         tonnage_block = ""
-        if file_pairs and mode_id in {"MASTER_INTAKE", "MTO"}:
+        locked_takeoff: dict | None = None
+        if file_pairs and mode_id in {"MASTER_INTAKE", "MTO", "FABRICATOR_ESTIMATION_PRO"}:
             from estimation.tonnage import get_or_lock_tonnage
             locked = await get_or_lock_tonnage(
                 analysis.get("file_ids") or [], file_pairs, analysis_id
             )
             if locked and locked.get("tonnage"):
+                takeoff = locked.get("extracted") or {}
+                locked_takeoff = takeoff
+                summary = (
+                    takeoff_summary_markdown(takeoff) if takeoff.get("by_profile")
+                    else f"- Total fabricated tonnage: **{locked['tonnage']:.2f} t**"
+                )
                 tonnage_block = (
-                    "\n\n## AUTHORITATIVE PROJECT TONNAGE\n"
-                    f"An independent verified member-by-member take-off computed the total "
-                    f"fabricated tonnage for this project as {locked['tonnage']:.2f} t. "
-                    f"This is the project's reference total — report this exact figure as the "
-                    f"project tonnage so every mode agrees. Your own detailed take-off must "
-                    f"reconcile to it; if your member-level sum differs by more than 2%, "
-                    f"recheck your take-off (missing or double-counted members) before "
-                    f"finalising, then state the reconciled total. Do not invent a different "
-                    f"headline tonnage."
+                    "\n\n## AUTHORITATIVE PROJECT TAKE-OFF (VERIFIED)\n"
+                    "A deterministic member-by-member take-off has already weighed every "
+                    "member on these drawings (quantity × length × catalogue unit weight). "
+                    "Its totals are the project reference — every tonnage, member count and "
+                    "weight-by-category / by-profile figure you report MUST equal these "
+                    "values exactly. Do not recompute or re-estimate them. Use your own "
+                    "reading of the drawings for everything else (marks, grades, "
+                    "connections, finishes, conflicts, RFIs), and where your member list "
+                    "disagrees with this take-off, report it as an RFI rather than changing "
+                    "the totals. In every register / MTO table use the unit weights (kg/m) "
+                    "from the profile table below so line weights reconcile to these "
+                    "totals. The verified member schedule is appended to the report "
+                    "automatically as the final section. Wherever the mode refers to a "
+                    f"locked tonnage (e.g. [LOCK_TONNAGE]) it is {locked['tonnage']:.2f} t, "
+                    "and the allowance shown below replaces any fixed allowance in the mode.\n\n"
+                    f"{summary}"
                 )
 
         system_persona = get_system_prompt(requester_role)
@@ -145,6 +161,10 @@ async def _run_analysis_task(analysis_id: str):
             user_text=user_text,
             file_paths=file_pairs,
         )
+        # Append the deterministic take-off so the report's tonnage, member
+        # counts and member schedule are exact, not model arithmetic.
+        if locked_takeoff and locked_takeoff.get("members"):
+            output = output.rstrip() + "\n\n---\n\n" + takeoff_report_markdown(locked_takeoff)
     except Exception as e:  # noqa: BLE001
         logger.exception("Analysis failed")
         await db.analyses.update_one(
@@ -178,7 +198,8 @@ async def _run_analysis_task(analysis_id: str):
         "model_used": model_used,
         "blockchain_hash": output_hash,
     }
-    exports = generate_all_exports(output, export_meta)
+    # CPU-heavy (PDF/DOCX/XLSX of a long report) — keep the event loop free.
+    exports = await asyncio.to_thread(generate_all_exports, output, export_meta)
 
     await db.analyses.update_one(
         {"id": analysis_id},

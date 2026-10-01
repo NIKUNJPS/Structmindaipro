@@ -285,6 +285,17 @@ def apply_band_to_extracted(
                     "primary_material": extracted.get("primary_material", ""),
                     "drawings_seen":    extracted.get("drawings_seen", 0),
                     "notes":            extracted.get("notes", ""),
+                    # Verified take-off detail (deterministic member-by-member weighing)
+                    "method":           extracted.get("method", ""),
+                    "net_steel_t":      extracted.get("net_steel_t"),
+                    "allowance_t":      extracted.get("allowance_t"),
+                    "allowance_pct":    extracted.get("accessory_allowance_pct"),
+                    "allowance_basis":  extracted.get("allowance_basis", ""),
+                    "pieces_total":     extracted.get("pieces_total"),
+                    "line_items":       extracted.get("line_items"),
+                    "by_group":         extracted.get("by_group", []),
+                    "by_profile":       extracted.get("by_profile", []),
+                    "unresolved_count": len(extracted.get("unresolved", []) or []),
                 },
                 "user_rate_low":  _format_money(rate_low,  c),
                 "user_rate_high": _format_money(rate_high, c),
@@ -303,6 +314,13 @@ def apply_band_to_extracted(
                 "final_amount_raw": _round(grand_mid),
             },
             "breakdown": [
+                *[
+                    {"item": f"Tonnage — {g['group']}", "qty": g["weight_t"], "unit": "t",
+                     "pieces": g["pieces"],
+                     "amount_low":  _format_money(g["weight_t"] * rate_low, c),
+                     "amount_high": _format_money(g["weight_t"] * rate_high, c)}
+                    for g in extracted.get("by_group", []) or []
+                ],
                 {"item": "Total fabricated tonnage", "qty": _round(tonnage), "unit": "t"},
                 {"item": "Per-ton rate — low",       "qty": _format_money(rate_low,  c), "unit": "/ ton"},
                 {"item": "Per-ton rate — high",      "qty": _format_money(rate_high, c), "unit": "/ ton"},

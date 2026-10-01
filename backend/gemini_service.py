@@ -1,56 +1,42 @@
 """
-LLM service — google.genai with service account authentication.
-Model family: Gemini 3.x  (migrated off Gemini 2.5 — see MIGRATION NOTES below)
+LLM service — google.genai (service account or API key).
 
-MIGRATION NOTES (Gemini 2.5 → Gemini 3.x)
-──────────────────────────────────────────
-Google is shutting down gemini-2.5-pro on 2026-10-16 (Gemini Developer API).
-This service now runs entirely on the Gemini 3.x family:
+PIPELINE OVERVIEW
+─────────────────
+  1. Pre-flight     Every oversized PDF is split losslessly into page-range
+                    chunks, then all files are grouped (in drawing order) into
+                    small batches of at most MAX_PAGES_PER_BATCH pages. Small
+                    batches are what make the report DETAILED: a model that
+                    reads 900 sheets in one call can only skim them, a model
+                    that reads ~40 sheets can report every one of them.
+  2. Fan-out        Batches are analysed CONCURRENTLY (MAX_PARALLEL_BATCHES)
+                    and each batch's files are uploaded in parallel.
+  3. Per-batch      Each batch walks the model chain on its own. Transient
+     resilience     errors (429 / 5xx / timeouts) are retried with exponential
+                    backoff on the SAME model first. A failure in batch 7 never
+                    throws away batches 1-6 — the old code restarted the whole
+                    job on the next model, which was the main source of lag.
+  4. Continuation   If a response hits MAX_TOKENS, the model is asked to
+                    continue exactly where it stopped and pieces are stitched.
+  5. Consolidation  When there is more than one batch, a final pass fuses the
+                    partial analyses into ONE report (one set of headings,
+                    unified tables, reconciled totals). The result is checked
+                    for silent data loss; if the merge dropped content it is
+                    retried on the next model, and as a last resort the
+                    partials are merged deterministically section-by-section.
 
-  1. MODEL_CHAIN updated:
-       gemini-3.1-pro-preview   — primary. Most capable reasoning model,
-                                  best fit for long structured technical
-                                  reports (MASTER_INTAKE, MTO, ESTIMATION_PRO).
-       gemini-3.5-flash         — first fallback. GA / stable / production-
-                                  ready, replaces the deprecated
-                                  gemini-3-flash-preview.
-       gemini-3.1-flash-lite    — second fallback. GA, cheapest / fastest,
-                                  used only if both above tiers fail.
-  2. thinking_budget → thinking_level. Gemini 3.x replaces the old numeric
-     thinking_budget with a qualitative thinking_level ("low" / "medium" /
-     "high"). Mixing the two params in one request is a 400 error, so the
-     old temperature/	oken-budget style config has been replaced entirely.
-  3. temperature: Google's Gemini 3 guidance is to leave temperature at its
-     default (1.0) — Gemini 3's reasoning is tuned for that default, and
-     overriding it (as the old 2.5 code did with 0.1) measurably hurts
-     output quality. We no longer set temperature explicitly.
-  4. max_output_tokens: unchanged at 65 536 — still the max for both Pro and
-     Flash in the 3.x family, still required for a full 12-section
-     MASTER_INTAKE in one shot.
-  5. Everything else — file batching, PDF page-splitting, continuation-on-
-     truncation, section chunking, multi-batch consolidation — is preserved
-     exactly. This is a model-layer migration only; the orchestration logic
-     that made large multi-file jobs reliable is untouched.
-
-KEY FIXES CARRIED FORWARD FROM THE 2.5 VERSION
-────────────────────────────────────────────────
-1.  max_output_tokens raised to 65 536 — fixes the truncated 12-section intake.
-2.  finish_reason guard: if Gemini returns finish_reason == MAX_TOKENS the
-    response was cut. We automatically continue with a CONTINUATION prompt
-    and stitch the pieces together until the model signals STOP.
-3.  Section-chunk mode (SECTION_GROUPS): for MASTER_INTAKE the prompt is split
-    into two logical halves (S1-S6, S7-S12) and run as two sequential calls
-    sharing the same uploaded files. Results are stitched cleanly.
-4.  Uploaded files are kept alive across ALL model fallback attempts and ALL
-    section chunks; deleted only after the entire session succeeds or all
-    models fail.
-5.  Client is created ONCE per run_analysis call, not once per model tier.
-6.  Empty-batch guard: text-only requests skip the Files API entirely.
-7.  Async-safe: file upload/wait loop is offloaded to a thread pool so the
-    event loop is never blocked.
-8.  Structured logging with consistent field names throughout.
-9.  PDF page-splitting keeps every request under Gemini's per-document /
-    per-request page limit without dropping a single page.
+MODELS
+──────
+  Default chain (override with GEMINI_MODEL_CHAIN="m1,m2,..."):
+      gemini-2.5-pro          primary — most consistent on drawing take-offs
+                              (low temperature, deterministic). Retired by
+                              Google on GEMINI_25_PRO_SUNSET; after that date
+                              it is dropped from the chain automatically.
+      gemini-3.1-pro-preview  most capable 3.x reasoning model.
+      gemini-3.5-flash        GA 3.x Flash.
+      gemini-2.5-flash        last resort.
+  Any model that returns 404 / NOT_FOUND is remembered as unavailable for the
+  life of the process so later calls skip it instantly.
 """
 
 from __future__ import annotations
@@ -59,10 +45,13 @@ import asyncio
 import json
 import logging
 import os
+import random
+import re
 import shutil
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from typing import Iterable
 
 import google.genai as genai
@@ -74,82 +63,146 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Model chain & labels — Gemini 3.x family
+# Model chain & per-model generation settings
 # ─────────────────────────────────────────────────────────────────────────────
-#
-# Ordered by capability first, cost/speed second. Each tier is tried in turn;
-# the first one that returns a non-empty response wins.
-#
-#   gemini-3.1-pro-preview  : Google's most capable reasoning model as of this
-#                             writing. Best for long, structurally strict,
-#                             multi-section technical documents. Still labeled
-#                             "preview" by Google but is the recommended Pro
-#                             tier for production Gemini 3 workloads.
-#   gemini-3.5-flash        : GA, stable, long-term-support Flash model.
-#                             Sustained frontier performance at lower cost —
-#                             the correct fallback for production reliability.
-#   gemini-3.1-flash-lite   : GA, cheapest/fastest tier. Used only if the two
-#                             tiers above both fail (rate limit, outage, etc).
-#
-MODEL_CHAIN: list[str] = [
+
+DEFAULT_MODEL_CHAIN: list[str] = [
+    "gemini-2.5-pro",
     "gemini-3.1-pro-preview",
     "gemini-3.5-flash",
-    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash",
 ]
 
+# Models Google has announced a shutdown date for. Past this date they are
+# removed from the chain so we never waste a round-trip on a dead model.
+MODEL_SUNSET: dict[str, date] = {
+    "gemini-2.5-pro": date(2026, 10, 16),
+}
+
 ENGINE_LABELS: dict[str, str] = {
+    "gemini-2.5-pro":         "STRUCTMIND CORE · PRO",
     "gemini-3.1-pro-preview": "STRUCTMIND CORE · PRO",
     "gemini-3.5-flash":       "STRUCTMIND CORE · FAST",
+    "gemini-2.5-flash":       "STRUCTMIND CORE · FAST",
     "gemini-3.1-flash-lite":  "STRUCTMIND CORE · LITE",
 }
 
-# Per-model thinking_level. Gemini 3.x models default to "high" reasoning
-# effort; for our structured, precision-sensitive analysis modes (dimensional
-# math, tonnage calculations, locked-value manifests) we always request the
-# highest available thinking level on every tier, including the lite tier —
-# correctness matters more than shaving latency on a fallback call.
-THINKING_LEVELS: dict[str, str] = {
-    "gemini-3.1-pro-preview": "high",
-    "gemini-3.5-flash":       "high",
-    "gemini-3.1-flash-lite":  "high",
-}
+
+def _build_model_chain() -> list[str]:
+    raw = os.environ.get("GEMINI_MODEL_CHAIN", "").strip()
+    chain = [m.strip() for m in raw.split(",") if m.strip()] if raw else list(DEFAULT_MODEL_CHAIN)
+    today = date.today()
+    active = [m for m in chain if not (m in MODEL_SUNSET and today >= MODEL_SUNSET[m])]
+    return active or chain
+
+
+MODEL_CHAIN: list[str] = _build_model_chain()
+
+# Models that answered 404 / NOT_FOUND in this process — skipped from then on.
+_UNAVAILABLE_MODELS: set[str] = set()
+
+
+def _active_models() -> list[str]:
+    models = [m for m in MODEL_CHAIN if m not in _UNAVAILABLE_MODELS]
+    return models or list(MODEL_CHAIN)
+
+
+def _is_gemini3(model_name: str) -> bool:
+    return model_name.startswith("gemini-3")
+
+
+def _media_resolution() -> types.MediaResolution | None:
+    """High resolution is what lets the model read small dimension strings,
+    member marks and weld symbols on drawings. Override with
+    GEMINI_MEDIA_RESOLUTION=low|medium|high|default."""
+    value = os.environ.get("GEMINI_MEDIA_RESOLUTION", "high").strip().lower()
+    return {
+        "low":    types.MediaResolution.MEDIA_RESOLUTION_LOW,
+        "medium": types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+        "high":   types.MediaResolution.MEDIA_RESOLUTION_HIGH,
+    }.get(value)
+
+
+def _generation_config(
+    model_name: str,
+    system_prompt: str,
+    *,
+    max_output_tokens: int,
+    temperature: float | None,
+    with_media: bool,
+    json_output: bool = False,
+) -> types.GenerateContentConfig:
+    """
+    Build the request config for a model family.
+
+    Gemini 2.5: low temperature (deterministic take-offs) + an explicit
+        thinking budget so reasoning never eats the whole output budget.
+    Gemini 3.x: thinking_level instead of thinking_budget (mixing them is a
+        400), and temperature left at the 1.0 default per Google's guidance.
+    """
+    kwargs: dict = {
+        "system_instruction": system_prompt,
+        "max_output_tokens": max_output_tokens,
+    }
+    if _is_gemini3(model_name):
+        level = types.ThinkingLevel.HIGH if "pro" in model_name else types.ThinkingLevel.MEDIUM
+        kwargs["thinking_config"] = types.ThinkingConfig(thinking_level=level)
+    else:
+        budget = 16_384 if "pro" in model_name else 8_192
+        kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=budget)
+        kwargs["temperature"] = 0.1 if temperature is None else temperature
+
+    if json_output:
+        kwargs["response_mime_type"] = "application/json"
+    if with_media:
+        res = _media_resolution()
+        if res is not None:
+            kwargs["media_resolution"] = res
+    return types.GenerateContentConfig(**kwargs)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Tunable limits
+# Tunable limits (all overridable via env)
 # ─────────────────────────────────────────────────────────────────────────────
 
-MAX_BATCH_MB        = 45.0  # max total MB per Gemini Files API request
-MAX_FILES_PER_BATCH = 6     # max files per Gemini Files API request
+MAX_BATCH_MB         = float(os.environ.get("GEMINI_MAX_BATCH_MB", "45"))
+MAX_FILES_PER_BATCH  = _env_int("GEMINI_MAX_FILES_PER_BATCH", 6)
+# Pages analysed per request. Kept deliberately small so every sheet gets
+# covered in detail; batches run in parallel so this does not cost wall time.
+MAX_PAGES_PER_BATCH  = _env_int("GEMINI_MAX_PAGES_PER_BATCH", 40)
+MAX_PDF_PAGES_PER_CHUNK = MAX_PAGES_PER_BATCH
+MAX_PARALLEL_BATCHES = _env_int("GEMINI_MAX_PARALLEL_BATCHES", 4)
 
-# Gemini rejects a request outright (400 INVALID_ARGUMENT) once the combined
-# PDF page count crosses its hard per-request document limit (1,000 pages).
-# A single large drawing-set PDF must therefore be split into page-range
-# chunks BEFORE batching — file-count/size batching alone does not help when
-# the whole problem is ONE oversized PDF.
-MAX_PDF_PAGES_PER_CHUNK = 500   # pages per split chunk (safe margin under 1,000)
-MAX_PAGES_PER_BATCH     = 900   # total pages allowed per Gemini request (all files combined)
-
-# Output token budget.
-# Gemini 3.1 Pro Preview, 3.5 Flash, and 3.1 Flash-Lite all support up to
-# 65 536 output tokens. We use the max to allow a full 12-section
-# MASTER_INTAKE in one shot.
 MAX_OUTPUT_TOKENS = 65_536
+MAX_CONTINUATIONS = _env_int("GEMINI_MAX_CONTINUATIONS", 6)
 
-# If the model still hits the limit (finish_reason == MAX_TOKENS) we issue
-# continuation calls. Each continuation re-uses the uploaded files.
-MAX_CONTINUATIONS = 4       # safety cap — avoids infinite loops
+# Retries on the SAME model for transient failures before falling back.
+MAX_TRANSIENT_RETRIES = _env_int("GEMINI_MAX_RETRIES", 3)
+REQUEST_TIMEOUT_S     = _env_int("GEMINI_REQUEST_TIMEOUT_S", 900)
+UPLOAD_TIMEOUT_S      = _env_int("GEMINI_UPLOAD_TIMEOUT_S", 300)
 
-# Section groups for MASTER_INTAKE chunking.
-# Each tuple is (group_label, section_numbers_string_for_prompt).
-# Only applied when the caller opts in via chunk_sections=True.
+# A consolidated report shorter than this fraction of the combined partials
+# is treated as lossy (the model summarised instead of merging).
+MIN_CONSOLIDATION_RATIO = float(os.environ.get("GEMINI_MIN_CONSOLIDATION_RATIO", "0.55"))
+
+# Section groups for MASTER_INTAKE chunking (opt-in via chunk_sections=True).
 SECTION_GROUPS: list[tuple[str, str]] = [
     ("PART-A · Sections 1–6",  "SECTIONS 1, 2, 3, 4, 5, AND 6 ONLY"),
     ("PART-B · Sections 7–12", "SECTIONS 7, 8, 9, 10, 11, AND 12 ONLY"),
 ]
 
-# Thread pool for blocking I/O (file upload, polling)
-_EXECUTOR = ThreadPoolExecutor(max_workers=4)
+# Thread pool for blocking SDK calls. Sized for parallel batches × uploads.
+_EXECUTOR = ThreadPoolExecutor(max_workers=max(16, MAX_PARALLEL_BATCHES * 6))
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -157,24 +210,6 @@ _EXECUTOR = ThreadPoolExecutor(max_workers=4)
 
 def engine_label(internal_model: str) -> str:
     return ENGINE_LABELS.get(internal_model, "STRUCTMIND CORE")
-
-
-def _thinking_config_for(model_name: str) -> types.ThinkingConfig:
-    """
-    Build the Gemini 3.x ThinkingConfig for the given model tier.
-
-    Gemini 3.x replaces the old numeric thinking_budget with a qualitative
-    thinking_level. Passing both thinking_level and thinking_budget in the
-    same request is a 400 error, so this is the ONLY thinking-related config
-    field set anywhere in this module.
-    """
-    level_name = THINKING_LEVELS.get(model_name, "high")
-    level_enum = {
-        "low":    types.ThinkingLevel.LOW,
-        "medium": types.ThinkingLevel.MEDIUM,
-        "high":   types.ThinkingLevel.HIGH,
-    }.get(level_name, types.ThinkingLevel.HIGH)
-    return types.ThinkingConfig(thinking_level=level_enum)
 
 
 def _get_credentials():
@@ -211,14 +246,44 @@ def _get_client() -> genai.Client:
     raise RuntimeError("No Gemini credentials configured")
 
 
+def _error_code(exc: Exception) -> int | None:
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    try:
+        return int(code) if code is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_model_missing(exc: Exception) -> bool:
+    msg = str(exc).upper()
+    return _error_code(exc) == 404 or "NOT_FOUND" in msg or "IS NOT FOUND" in msg
+
+
+def _is_transient(exc: Exception) -> bool:
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError, ConnectionError)):
+        return True
+    code = _error_code(exc)
+    if code in (408, 429, 500, 502, 503, 504):
+        return True
+    msg = str(exc).upper()
+    return any(s in msg for s in (
+        "RESOURCE_EXHAUSTED", "UNAVAILABLE", "DEADLINE_EXCEEDED", "OVERLOADED",
+        "INTERNAL", "TIMED OUT", "TIMEOUT", "CONNECTION RESET", "EMPTY RESPONSE",
+    ))
+
+
+async def _run_blocking(fn, *args, timeout: float | None = None):
+    loop = asyncio.get_running_loop()
+    fut = loop.run_in_executor(_EXECUTOR, fn, *args)
+    return await asyncio.wait_for(fut, timeout=timeout) if timeout else await fut
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# PDF page splitting — keeps every request under Gemini's per-document /
-# per-request page limit without dropping a single page.
+# PDF page splitting
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _pdf_page_count(file_path: str) -> int:
-    """Return the page count of a PDF, or 0 if it can't be read (non-PDF,
-    corrupt, encrypted). Callers must treat 0 as 'unknown' — not empty."""
+    """Return the page count of a PDF, or 0 if it can't be read."""
     try:
         from pypdf import PdfReader
         return len(PdfReader(file_path).pages)
@@ -230,12 +295,8 @@ def _pdf_page_count(file_path: str) -> int:
 def _split_pdf_if_needed(
     file_path: str, mime_type: str, scratch_dir: str,
 ) -> list[tuple[str, str]]:
-    """
-    If `file_path` is a PDF larger than MAX_PDF_PAGES_PER_CHUNK pages, split it
-    into contiguous page-range chunks (lossless — every page is preserved
-    exactly, nothing is summarised or dropped) and return the chunk paths.
-    Otherwise return the file unchanged.
-    """
+    """Split a PDF larger than MAX_PDF_PAGES_PER_CHUNK pages into contiguous,
+    lossless page-range chunks. Non-PDFs and small PDFs pass through."""
     if mime_type != "application/pdf":
         return [(file_path, mime_type)]
 
@@ -253,7 +314,7 @@ def _split_pdf_if_needed(
             writer = PdfWriter()
             for p in range(start, end):
                 writer.add_page(reader.pages[p])
-            chunk_path = os.path.join(scratch_dir, f"{base}_p{start + 1}-{end}.pdf")
+            chunk_path = os.path.join(scratch_dir, f"{base}_p{start + 1:05d}-{end:05d}.pdf")
             with open(chunk_path, "wb") as fh:
                 writer.write(fh)
             chunks.append((chunk_path, mime_type))
@@ -278,40 +339,33 @@ def _build_batches(
     file_paths: list[tuple[str, str]],
 ) -> list[list[tuple[str, str]]]:
     """
-    Split file_paths into batches that each stay under MAX_BATCH_MB,
-    MAX_FILES_PER_BATCH and MAX_PAGES_PER_BATCH. Largest files first.
-    """
-    sorted_files = sorted(
-        file_paths,
-        key=lambda x: os.path.getsize(x[0]) if os.path.exists(x[0]) else 0,
-        reverse=True,
-    )
+    Group files into batches that each stay under MAX_BATCH_MB,
+    MAX_FILES_PER_BATCH and MAX_PAGES_PER_BATCH.
 
+    Files are kept in their original (drawing-set) order so each batch covers
+    a contiguous run of sheets and split-PDF chunks stay in sequence — this
+    keeps sheet numbering coherent in the final report.
+    """
     batches: list[list[tuple[str, str]]] = []
     batch_sizes: list[float] = []
     batch_pages: list[int] = []
 
-    for fp, mime in sorted_files:
+    for fp, mime in file_paths:
         if not os.path.exists(fp):
             logger.warning("file_not_found path=%s", fp)
             continue
         size_mb = os.path.getsize(fp) / (1_024 * 1_024)
-        pages = _pdf_page_count(fp) if mime == "application/pdf" else 0
+        pages = _pdf_page_count(fp) if mime == "application/pdf" else 1
 
-        placed = False
-        for i, batch in enumerate(batches):
-            if (
-                len(batch) < MAX_FILES_PER_BATCH
-                and batch_sizes[i] + size_mb <= MAX_BATCH_MB
-                and batch_pages[i] + pages <= MAX_PAGES_PER_BATCH
-            ):
-                batch.append((fp, mime))
-                batch_sizes[i] += size_mb
-                batch_pages[i] += pages
-                placed = True
-                break
-
-        if not placed:
+        if batches and (
+            len(batches[-1]) < MAX_FILES_PER_BATCH
+            and batch_sizes[-1] + size_mb <= MAX_BATCH_MB
+            and batch_pages[-1] + pages <= MAX_PAGES_PER_BATCH
+        ):
+            batches[-1].append((fp, mime))
+            batch_sizes[-1] += size_mb
+            batch_pages[-1] += pages
+        else:
             batches.append([(fp, mime)])
             batch_sizes.append(size_mb)
             batch_pages.append(pages)
@@ -321,19 +375,18 @@ def _build_batches(
             "file_batch batch=%d/%d files=%d size_mb=%.1f pages=%d",
             i + 1, len(batches), len(batch), sz, pg,
         )
-    return batches
+    return batches or [[]]
 
 
 def prepare_file_batches(
     file_paths: list[tuple[str, str]],
 ) -> tuple[list[list[tuple[str, str]]], str | None]:
     """
-    Full pre-flight: split any oversized single PDF into page-safe chunks,
-    then group everything into upload-safe batches.
+    Split oversized PDFs into page-safe chunks, then group everything into
+    upload-safe batches.
 
     Returns (batches, scratch_dir). If scratch_dir is not None the caller
-    MUST shutil.rmtree it (ignore_errors=True) once every batch has been
-    uploaded — it holds the temporary split-PDF chunks.
+    MUST shutil.rmtree it (ignore_errors=True) when done.
     """
     if not file_paths:
         return [[]], None
@@ -347,67 +400,67 @@ def prepare_file_batches(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# File upload — blocking, wrapped for async
+# File upload
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _upload_files_sync(
-    client: genai.Client,
-    file_paths: list[tuple[str, str]],
-) -> list:
-    """
-    Upload files to Gemini Files API (blocking).
-    Polls until ACTIVE or FAILED. Returns list of active file objects.
-    Called via run_in_executor so the event loop stays free.
-    """
-    uploaded = []
-    for file_path, mime_type in file_paths:
-        if not os.path.exists(file_path):
-            logger.warning("upload_skip_missing path=%s", file_path)
-            continue
-        size_mb = os.path.getsize(file_path) / (1_024 * 1_024)
-        logger.info("uploading path=%s size_mb=%.1f", file_path, size_mb)
+def _upload_one_sync(client: genai.Client, file_path: str, mime_type: str):
+    """Upload a single file and poll until ACTIVE. Returns the file or None."""
+    if not os.path.exists(file_path):
+        logger.warning("upload_skip_missing path=%s", file_path)
+        return None
+    size_mb = os.path.getsize(file_path) / (1_024 * 1_024)
+    for attempt in range(MAX_TRANSIENT_RETRIES + 1):
         try:
             with open(file_path, "rb") as fh:
                 uploaded_file = client.files.upload(
                     file=fh,
-                    config=types.UploadFileConfig(mime_type=mime_type),
+                    config=types.UploadFileConfig(
+                        mime_type=mime_type,
+                        display_name=os.path.basename(file_path)[:120],
+                    ),
                 )
-
-            # Poll until ACTIVE
-            deadline = time.monotonic() + 120
+            deadline = time.monotonic() + UPLOAD_TIMEOUT_S
+            delay = 0.5
             while time.monotonic() < deadline:
                 info = client.files.get(name=uploaded_file.name)
                 state = info.state.name
                 if state == "ACTIVE":
-                    logger.info(
-                        "upload_ready name=%s size_mb=%.1f",
-                        uploaded_file.name, size_mb,
-                    )
-                    uploaded.append(info)
-                    break
+                    logger.info("upload_ready name=%s size_mb=%.1f", uploaded_file.name, size_mb)
+                    return info
                 if state == "FAILED":
-                    logger.error("upload_failed name=%s", uploaded_file.name)
-                    break
-                logger.debug("upload_state=%s name=%s", state, uploaded_file.name)
-                time.sleep(3)
-            else:
-                logger.warning("upload_timeout name=%s", uploaded_file.name)
-
-        except Exception as exc:
-            logger.warning("upload_error path=%s error=%s", file_path, exc)
-
-    return uploaded
+                    raise RuntimeError(f"Gemini rejected file {os.path.basename(file_path)}")
+                time.sleep(delay)
+                delay = min(delay * 1.5, 4.0)
+            raise TimeoutError(f"upload processing timed out for {os.path.basename(file_path)}")
+        except Exception as exc:  # noqa: BLE001
+            if attempt < MAX_TRANSIENT_RETRIES and _is_transient(exc):
+                wait = 2 ** attempt + random.random()
+                logger.warning("upload_retry path=%s attempt=%d wait=%.1fs error=%s",
+                               file_path, attempt + 1, wait, exc)
+                time.sleep(wait)
+                continue
+            logger.error("upload_error path=%s error=%s", file_path, exc)
+            return None
+    return None
 
 
 async def _upload_files(
     client: genai.Client,
     file_paths: list[tuple[str, str]],
 ) -> list:
-    """Async wrapper — runs blocking upload in thread pool."""
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        _EXECUTOR, _upload_files_sync, client, file_paths
-    )
+    """Upload all files of a batch concurrently, preserving order.
+
+    Raises if any file failed to upload — analysing a batch with missing
+    sheets would silently produce an incomplete report."""
+    results = await asyncio.gather(*[
+        _run_blocking(_upload_one_sync, client, fp, mime) for fp, mime in file_paths
+    ])
+    uploaded = [r for r in results if r is not None]
+    if len(uploaded) != len(file_paths):
+        _cleanup_files(client, uploaded)
+        missing = [os.path.basename(fp) for (fp, _), r in zip(file_paths, results) if r is None]
+        raise RuntimeError(f"File upload failed for: {', '.join(missing)}")
+    return uploaded
 
 
 def _cleanup_files(client: genai.Client, uploaded_files: list) -> None:
@@ -420,19 +473,29 @@ def _cleanup_files(client: genai.Client, uploaded_files: list) -> None:
             logger.warning("file_delete_error name=%s error=%s", f.name, exc)
 
 
+async def _cleanup_files_async(client: genai.Client, uploaded_files: list) -> None:
+    if uploaded_files:
+        try:
+            await _run_blocking(_cleanup_files, client, uploaded_files)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("file_cleanup_failed error=%s", exc)
+
+
+def _file_parts(uploaded_files: list) -> list[types.Part]:
+    return [
+        types.Part(file_data=types.FileData(file_uri=f.uri, mime_type=f.mime_type))
+        for f in uploaded_files
+    ]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Core generation — single call with continuation support
+# Core generation
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _is_truncated(response) -> bool:
-    """
-    Return True if Gemini stopped because it hit the output token limit.
-    The finish_reason field lives on the first candidate.
-    """
+    """True if Gemini stopped because it hit the output token limit."""
     try:
         reason = response.candidates[0].finish_reason
-        # FinishReason enum: STOP=1, MAX_TOKENS=2
-        # Accept both the enum value and its string name
         return str(reason) in ("FinishReason.MAX_TOKENS", "MAX_TOKENS", "2")
     except Exception:
         return False
@@ -441,35 +504,79 @@ def _is_truncated(response) -> bool:
 def _generate(
     client: genai.Client,
     model_name: str,
+    contents: list,
+    config: types.GenerateContentConfig,
+) -> tuple[str, bool]:
+    """One blocking generate_content call → (text, was_truncated)."""
+    response = client.models.generate_content(
+        model=model_name, contents=contents, config=config,
+    )
+    # Not stripped: continuation pieces must join exactly at the cut point.
+    text = response.text or ""
+    if not text.strip():
+        reason = None
+        try:
+            reason = response.candidates[0].finish_reason
+        except Exception:
+            pass
+        raise RuntimeError(f"Empty response from model (finish_reason={reason})")
+    return text, _is_truncated(response)
+
+
+async def generate_once(
+    *,
+    client: genai.Client,
+    model_name: str,
     system_prompt: str,
     contents: list,
+    max_output_tokens: int = MAX_OUTPUT_TOKENS,
+    temperature: float | None = None,
+    with_media: bool = True,
+    json_output: bool = False,
+    label: str = "",
 ) -> tuple[str, bool]:
     """
-    Run a single generate_content call and return (text, was_truncated).
-    Raises RuntimeError on empty or fully blocked response.
-    This is a BLOCKING call — wrap in run_in_executor for async callers.
-
-    Gemini 3.x config notes:
-      - thinking_config uses thinking_level (qualitative), not the legacy
-        numeric thinking_budget — mixing the two raises a 400 error.
-      - temperature is intentionally NOT set. Google's Gemini 3 guidance is
-        to leave temperature at its default (1.0); Gemini 3's reasoning is
-        tuned for that default and overriding it degrades output quality,
-        unlike the 2.5 family where a low temperature helped determinism.
+    Run one generation with transient-error retries (exponential backoff) on
+    the same model. Non-transient errors propagate so the caller can fall
+    back to the next model. Never blocks the event loop.
     """
-    response = client.models.generate_content(
-        model=model_name,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            max_output_tokens=MAX_OUTPUT_TOKENS,
-            thinking_config=_thinking_config_for(model_name),
-        ),
+    config = _generation_config(
+        model_name, system_prompt,
+        max_output_tokens=max_output_tokens,
+        temperature=temperature,
+        with_media=with_media,
+        json_output=json_output,
     )
-    text = (response.text or "").strip()
-    if not text:
-        raise RuntimeError("Empty response from model")
-    return text, _is_truncated(response)
+    for attempt in range(MAX_TRANSIENT_RETRIES + 1):
+        try:
+            return await _run_blocking(
+                _generate, client, model_name, contents, config,
+                timeout=REQUEST_TIMEOUT_S,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if _is_model_missing(exc):
+                _UNAVAILABLE_MODELS.add(model_name)
+                logger.warning("model_unavailable model=%s — skipping from now on", model_name)
+                raise
+            if attempt < MAX_TRANSIENT_RETRIES and _is_transient(exc):
+                wait = min(60.0, 2 ** (attempt + 1)) + random.random() * 2
+                logger.warning(
+                    "generate_retry model=%s label=%s attempt=%d wait=%.1fs error=%s",
+                    model_name, label, attempt + 1, wait, exc,
+                )
+                await asyncio.sleep(wait)
+                continue
+            raise
+    raise RuntimeError("unreachable")
+
+
+_CONTINUATION_INSTRUCTION = (
+    "Your previous response was cut off at the output limit. Continue EXACTLY "
+    "from where you stopped — do NOT restart, do NOT repeat any heading, row "
+    "or sentence already written. If you stopped inside a table, continue the "
+    "table rows directly (no new header row). Complete all remaining sections "
+    "in full detail."
+)
 
 
 async def _generate_with_continuation(
@@ -480,74 +587,86 @@ async def _generate_with_continuation(
     initial_parts: list[types.Part],
     session_id: str,
     label: str = "",
+    with_media: bool = True,
 ) -> str:
     """
-    Run generate_content. If the model hits MAX_TOKENS, send a continuation
-    prompt and stitch the pieces together. Repeats up to MAX_CONTINUATIONS.
-
-    Returns the full stitched text.
+    Generate; if the model hits MAX_TOKENS, keep asking it to continue (up to
+    MAX_CONTINUATIONS times) with the FULL conversation so far, so it always
+    knows exactly what has already been written. Returns stitched text.
     """
-    loop = asyncio.get_running_loop()
-
-    # Build initial message
-    contents: list[types.Content] = [
-        types.Content(role="user", parts=initial_parts)
-    ]
-
+    history: list[types.Content] = [types.Content(role="user", parts=initial_parts)]
     accumulated: list[str] = []
 
     for attempt in range(MAX_CONTINUATIONS + 1):
-        logger.info(
-            "generate attempt=%d model=%s session=%s label=%s",
-            attempt, model_name, session_id, label,
-        )
-        text, truncated = await loop.run_in_executor(
-            _EXECUTOR, _generate, client, model_name, system_prompt, contents
+        logger.info("generate attempt=%d model=%s session=%s label=%s",
+                    attempt, model_name, session_id, label)
+        text, truncated = await generate_once(
+            client=client, model_name=model_name, system_prompt=system_prompt,
+            contents=history, with_media=with_media, label=label,
         )
         accumulated.append(text)
-
         if not truncated:
-            logger.info(
-                "generate_complete attempt=%d model=%s session=%s label=%s",
-                attempt, model_name, session_id, label,
-            )
             break
-
         if attempt == MAX_CONTINUATIONS:
-            logger.warning(
-                "max_continuations_reached model=%s session=%s label=%s",
-                model_name, session_id, label,
-            )
+            logger.warning("max_continuations_reached model=%s session=%s label=%s",
+                           model_name, session_id, label)
             break
-
-        # Build continuation: show what we have so far, ask to continue
-        logger.info(
-            "truncated_continuing attempt=%d model=%s session=%s",
-            attempt, model_name, session_id,
-        )
-        continuation_instruction = (
-            "Your previous response was cut off at the token limit. "
-            "Continue EXACTLY from where you stopped — do NOT restart, "
-            "do NOT repeat any heading or content already written. "
-            "Pick up mid-sentence if needed and complete all remaining sections."
-        )
-        contents = [
-            types.Content(role="user",  parts=initial_parts),
+        history = history + [
             types.Content(role="model", parts=[types.Part(text=text)]),
-            types.Content(role="user",  parts=[types.Part(text=continuation_instruction)]),
+            types.Content(role="user", parts=[types.Part(text=_CONTINUATION_INSTRUCTION)]),
         ]
 
-    return "\n".join(accumulated)
+    return _stitch(accumulated)
+
+
+_BLOCK_START_RE = re.compile(r"^\s*(#|\||[-*+]\s|\d+[.)]\s|>)")
+
+
+def _stitch(pieces: list[str]) -> str:
+    """Join continuation pieces. Pieces are raw (unstripped), so a cut
+    mid-word or mid-sentence joins seamlessly; a piece that starts a new
+    markdown block (heading, table row, list item) gets its own line."""
+    out = pieces[0] if pieces else ""
+    for piece in pieces[1:]:
+        if out and not out.endswith("\n") and _BLOCK_START_RE.match(piece):
+            out += "\n"
+        out += piece
+    return out.strip()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Single file-batch runner
+# Per-batch runner (with its own model fallback)
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _batch_user_text(user_text: str, batch_num: int, total_batches: int, files: list[tuple[str, str]]) -> str:
+    if total_batches <= 1:
+        return (
+            f"{user_text}\n\n"
+            "Analyse EVERY sheet, page, view, detail, schedule and note in the "
+            "attached files. Report every member, connection, dimension and "
+            "finding individually — do not summarise, sample or skip any drawing."
+        )
+    names = ", ".join(os.path.basename(fp) for fp, _ in files)
+    return (
+        f"{user_text}\n\n"
+        f"CONTEXT: The project drawing set is large and is being reviewed in "
+        f"{total_batches} consecutive parts. You are reviewing part {batch_num} "
+        f"of {total_batches} (files: {names}). A separate step will merge all "
+        f"parts into one final report, so:\n"
+        "- Analyse EVERY sheet in these files completely and in full detail — "
+        "every member, mark, size, length, quantity, connection, dimension, "
+        "note and issue. Never summarise, sample or skip a sheet.\n"
+        "- Always cite the drawing/sheet number for every row and finding so "
+        "the merge can de-duplicate correctly.\n"
+        "- Follow the mode's full section structure and table formats exactly.\n"
+        "- Give subtotals for this part only; do not guess the rest of the project.\n"
+        "- Do not mention parts, batches or splitting in your output."
+    )
+
 
 async def _run_single_batch(
     *,
     client: genai.Client,
-    model_name: str,
     system_prompt: str,
     user_text: str,
     batch_files: list[tuple[str, str]],
@@ -555,106 +674,137 @@ async def _run_single_batch(
     total_batches: int,
     session_id: str,
     chunk_sections: bool = False,
-) -> str:
+) -> tuple[str, str]:
     """
-    Run one Gemini request for a single batch of files.
-
-    If chunk_sections=True the call is split into two sequential requests
-    (SECTION_GROUPS) sharing the same uploaded files. This guarantees
-    all 12 sections are generated even if a single call would be too long.
-
-    Returns stitched markdown text.
+    Analyse one batch. Files are uploaded ONCE and reused across every model
+    in the fallback chain. Returns (markdown, model_used).
     """
-    # ── Upload files ────────────────────────────────────────────────────────
-    uploaded_files: list = []
-    if batch_files:
-        uploaded_files = await _upload_files(client, batch_files)
-        if not uploaded_files:
-            logger.warning(
-                "no_files_uploaded batch=%d session=%s", batch_num, session_id
-            )
-
-    # ── Build file parts (reused across section chunks) ──────────────────────
-    file_parts: list[types.Part] = [
-        types.Part(
-            file_data=types.FileData(
-                file_uri=f.uri,
-                mime_type=f.mime_type,
-            )
-        )
-        for f in uploaded_files
-    ]
-
-    # ── Annotate user text for multi-file-batch jobs ─────────────────────────
-    base_user_text = user_text
-    if total_batches > 1:
-        base_user_text = (
-            f"[File Batch {batch_num} of {total_batches}]\n\n"
-            f"{user_text}\n\n"
-            f"Analyse only the files in this file batch thoroughly."
-        )
+    uploaded_files: list = await _upload_files(client, batch_files) if batch_files else []
+    file_parts = _file_parts(uploaded_files)
+    base_text = _batch_user_text(user_text, batch_num, total_batches, batch_files)
+    last_err: Exception | None = None
 
     try:
-        # ── Section-chunk mode: two calls, results stitched ───────────────────
-        if chunk_sections:
-            section_outputs: list[str] = []
-
-            for group_label, section_spec in SECTION_GROUPS:
-                chunk_instruction = (
-                    f"\n\nCRITICAL INSTRUCTION: Output {section_spec}. "
-                    f"Do NOT output any other sections. "
-                    f"Begin immediately with the first section in this group."
-                )
-                chunk_text = base_user_text + chunk_instruction
-                initial_parts = [types.Part(text=chunk_text)] + file_parts
-
-                logger.info(
-                    "section_chunk group=%s batch=%d/%d model=%s session=%s",
-                    group_label, batch_num, total_batches, model_name, session_id,
-                )
-                chunk_output = await _generate_with_continuation(
-                    client=client,
-                    model_name=model_name,
-                    system_prompt=system_prompt,
-                    initial_parts=initial_parts,
-                    session_id=session_id,
-                    label=f"{group_label} batch={batch_num}",
-                )
-                section_outputs.append(chunk_output)
-
-            return "\n\n".join(section_outputs)
-
-        # ── Single-call mode ──────────────────────────────────────────────────
-        initial_parts = [types.Part(text=base_user_text)] + file_parts
-        return await _generate_with_continuation(
-            client=client,
-            model_name=model_name,
-            system_prompt=system_prompt,
-            initial_parts=initial_parts,
-            session_id=session_id,
-            label=f"batch={batch_num}",
-        )
-
+        for model_name in _active_models():
+            try:
+                if chunk_sections:
+                    async def run_group(group_label: str, spec: str) -> str:
+                        text = (
+                            base_text
+                            + f"\n\nCRITICAL INSTRUCTION: Output {spec}. Do NOT output "
+                            "any other sections. Begin immediately with the first section in this group."
+                        )
+                        return await _generate_with_continuation(
+                            client=client, model_name=model_name, system_prompt=system_prompt,
+                            initial_parts=[types.Part(text=text)] + file_parts,
+                            session_id=session_id, label=f"{group_label} batch={batch_num}",
+                        )
+                    parts = await asyncio.gather(*[run_group(g, s) for g, s in SECTION_GROUPS])
+                    output = "\n\n".join(parts)
+                else:
+                    output = await _generate_with_continuation(
+                        client=client, model_name=model_name, system_prompt=system_prompt,
+                        initial_parts=[types.Part(text=base_text)] + file_parts,
+                        session_id=session_id, label=f"batch={batch_num}/{total_batches}",
+                    )
+                logger.info("batch_complete batch=%d/%d model=%s session=%s chars=%d",
+                            batch_num, total_batches, model_name, session_id, len(output))
+                return output, model_name
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                logger.warning("batch_model_failed batch=%d/%d model=%s session=%s error=%s",
+                               batch_num, total_batches, model_name, session_id, exc)
+                continue
+        raise RuntimeError(f"batch {batch_num}/{total_batches} failed on every model: {last_err}")
     finally:
-        # Always clean up uploaded files
-        if uploaded_files:
-            _cleanup_files(client, uploaded_files)
+        await _cleanup_files_async(client, uploaded_files)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Merge helper
+# Consolidation
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _merge_batch_outputs(outputs: list[str], total_batches: int) -> str:
-    """Deterministic fallback merge — used only if the LLM consolidation pass fails.
+_HEADING_RE = re.compile(r"^(#{1,3})\s+(.*\S)\s*$", re.MULTILINE)
 
-    No 'file batch' headers: drawings are split into batches purely for upload-size
-    reasons, so the client never sees batching artefacts. Sections are concatenated
-    with a simple rule between them.
+
+def _normalise_heading(h: str) -> str:
+    h = re.sub(r"[*_`]", "", h).strip().lower()
+    h = re.sub(r"\(.*?(part|batch|sheets?).*?\)", "", h)
+    return re.sub(r"\s+", " ", h).strip()
+
+
+def _merge_batch_outputs(outputs: list[str], total_batches: int = 0) -> str:
+    """Deterministic, lossless fallback merge.
+
+    Partials follow the same mode template, so content is grouped under each
+    top-level section heading in order of first appearance: one heading per
+    section, with every partial's content for that section beneath it.
+    Nothing is dropped.
     """
-    if len(outputs) == 1:
-        return outputs[0]
-    return "\n\n---\n\n".join(o.strip() for o in outputs if o and o.strip())
+    outputs = [o.strip() for o in outputs if o and o.strip()]
+    if len(outputs) <= 1:
+        return outputs[0] if outputs else ""
+
+    # Section level = the shallowest heading level that every partial uses
+    # (a lone "# Title" in one partial must not become the section level).
+    per_partial = [
+        min((len(m.group(1)) for m in _HEADING_RE.finditer(o)), default=None)
+        for o in outputs
+    ]
+    if any(lv is None for lv in per_partial):
+        return "\n\n---\n\n".join(outputs)
+    level = max(per_partial)
+    split_re = re.compile(rf"^#{{{level}}}\s+(.*\S)\s*$", re.MULTILINE)
+
+    order: list[str] = []
+    titles: dict[str, str] = {}
+    bodies: dict[str, list[str]] = {}
+    preamble: list[str] = []
+
+    for out in outputs:
+        matches = list(split_re.finditer(out))
+        head = out[: matches[0].start()].strip() if matches else out
+        if head and head not in preamble:
+            preamble.append(head)
+        for i, m in enumerate(matches):
+            key = _normalise_heading(m.group(1))
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(out)
+            body = out[m.end():end].strip()
+            if key not in bodies:
+                order.append(key)
+                titles[key] = m.group(1)
+                bodies[key] = []
+            if body:
+                bodies[key].append(body)
+
+    parts = list(preamble)
+    for key in order:
+        parts.append(f"{'#' * level} {titles[key]}\n\n" + "\n\n".join(bodies[key]))
+    return "\n\n".join(parts)
+
+
+_CONSOLIDATION_INSTRUCTION = (
+    "Below are {n} PARTIAL analyses. Each one covers a different, consecutive "
+    "part of the SAME project's drawing set (the set was split only because of "
+    "upload limits). Merge them into ONE single, complete, professional report.\n\n"
+    "STRICT REQUIREMENTS:\n"
+    "1. One set of section headings in the exact order and format the mode "
+    "requires — never repeat a section per partial.\n"
+    "2. Every table, register, schedule and list becomes ONE unified table "
+    "containing EVERY row from every partial. Keep every row's detail "
+    "(marks, sizes, lengths, quantities, weights, sheet references, notes). "
+    "Remove only exact duplicates of the same item on the same sheet.\n"
+    "3. Re-compute every total, subtotal, count, tonnage and cost from the "
+    "merged rows to give single project-level figures. Show the arithmetic "
+    "is consistent (row sums = totals).\n"
+    "4. Preserve every distinct drawing, member, finding, RFI, issue and "
+    "recommendation — this is a MERGE, not a summary. The final report must "
+    "be at least as detailed as all partials combined.\n"
+    "5. Executive summary / overview sections must describe the WHOLE project.\n"
+    "6. Never mention 'batch', 'part', 'partial', 'subset' or that the work was split.\n"
+    "7. If the output is long, keep writing — you will be asked to continue.\n"
+    "Output ONLY the final merged report.\n\n{body}"
+)
 
 
 async def _consolidate_outputs(
@@ -665,33 +815,13 @@ async def _consolidate_outputs(
     outputs: list[str],
     session_id: str,
 ) -> str:
-    """Merge per-batch outputs into ONE coherent report via a final model pass.
-
-    Each batch covered a different subset of the project's drawings. We ask the model
-    to fuse them into a single professional deliverable: one set of headings, unified
-    and de-duplicated tables, and project totals reconciled across all batches.
-    """
+    """Fuse per-batch outputs into ONE coherent report via a model pass."""
+    clean = [o.strip() for o in outputs if o and o.strip()]
     joined = "\n\n".join(
-        f"<<<PARTIAL ANALYSIS {i}>>>\n{out.strip()}"
-        for i, out in enumerate(outputs, 1)
-        if out and out.strip()
+        f"<<<PARTIAL ANALYSIS {i} OF {len(clean)}>>>\n{out}\n<<<END PARTIAL {i}>>>"
+        for i, out in enumerate(clean, 1)
     )
-    instruction = (
-        "The text below contains several PARTIAL analyses. Each partial covers a "
-        "different subset of the SAME project's drawings (the drawing set was split "
-        "only to respect upload limits). Merge them into ONE single, coherent, "
-        "professional report.\n\n"
-        "Strict requirements:\n"
-        "- Produce a single set of section headings — never repeat a heading per partial.\n"
-        "- Consolidate and de-duplicate every table, register and list into unified tables.\n"
-        "- Reconcile and SUM all quantities, tonnage, counts and costs across the partials "
-        "into single project-level totals.\n"
-        "- Preserve every distinct member, sheet, line item and finding — lose nothing.\n"
-        "- Never mention 'batch', 'partial', 'subset' or that the work was split.\n"
-        "- Keep the exact section structure, tables, tone and formatting the mode requires.\n"
-        "Output only the final merged report.\n\n"
-        f"{joined}"
-    )
+    instruction = _CONSOLIDATION_INSTRUCTION.format(n=len(clean), body=joined)
     return await _generate_with_continuation(
         client=client,
         model_name=model_name,
@@ -699,7 +829,45 @@ async def _consolidate_outputs(
         initial_parts=[types.Part(text=instruction)],
         session_id=session_id,
         label="consolidation",
+        with_media=False,
     )
+
+
+async def _consolidate_with_fallback(
+    *,
+    client: genai.Client,
+    system_prompt: str,
+    outputs: list[str],
+    session_id: str,
+    preferred_model: str,
+) -> tuple[str, str | None]:
+    """Try consolidation on each model (preferred first); reject lossy merges.
+    Falls back to the deterministic section merge. Returns (text, model|None)."""
+    total_chars = sum(len(o) for o in outputs if o)
+    models = [preferred_model] + [m for m in _active_models() if m != preferred_model]
+    for model_name in models:
+        if model_name in _UNAVAILABLE_MODELS:
+            continue
+        try:
+            merged = await _consolidate_outputs(
+                client=client, model_name=model_name, system_prompt=system_prompt,
+                outputs=outputs, session_id=session_id,
+            )
+            ratio = len(merged) / max(1, total_chars)
+            if ratio < MIN_CONSOLIDATION_RATIO:
+                logger.warning(
+                    "consolidation_lossy model=%s session=%s ratio=%.2f — retrying",
+                    model_name, session_id, ratio,
+                )
+                continue
+            logger.info("consolidation_complete model=%s session=%s ratio=%.2f",
+                        model_name, session_id, ratio)
+            return merged, model_name
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("consolidation_failed model=%s session=%s error=%s",
+                           model_name, session_id, exc)
+    logger.warning("consolidation_fallback=deterministic session=%s", session_id)
+    return _merge_batch_outputs(outputs), None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -715,112 +883,67 @@ async def run_analysis(
     chunk_sections: bool = False,
 ) -> tuple[str, str]:
     """
-    Execute Gemini analysis with:
-      • File batching    — large file sets split into safe-sized batches
-      • Section chunking — optional two-pass mode for long outputs (MASTER_INTAKE)
-      • Continuation     — automatic continuation if output is truncated
-      • Model fallback   — falls through MODEL_CHAIN (Gemini 3.1 Pro Preview →
-                            Gemini 3.5 Flash → Gemini 3.1 Flash-Lite) on any error
+    Execute a full drawing analysis and return ONE consolidated report.
 
-    Parameters
-    ----------
-    session_id      : Unique identifier for logging / tracing.
-    system_prompt   : System instruction string.
-    user_text       : User-facing task description.
-    file_paths      : Iterable of (local_path, mime_type) tuples.
-    chunk_sections  : Set True for MASTER_INTAKE (12-section) prompts to split
-                      the output into two sequential section-group calls,
-                      guaranteeing all sections are generated.
-
-    Returns
-    -------
-    (output_markdown, engine_display_label)
+    Returns (output_markdown, engine_display_label).
     """
-    last_err: Exception | None = None
     file_paths_list = list(file_paths)
-
-    # Build file batches once — reused across model fallback attempts.
-    # Any single oversized PDF is transparently split into page-safe chunks
-    # here (see prepare_file_batches) so the client never sees the split.
-    batches, scratch_dir = prepare_file_batches(file_paths_list)
+    started = time.monotonic()
+    batches, scratch_dir = await _run_blocking(prepare_file_batches, file_paths_list)
+    total = len(batches)
 
     logger.info(
-        "run_analysis_start session=%s total_files=%d total_file_batches=%d "
+        "run_analysis_start session=%s total_files=%d batches=%d parallel=%d "
         "chunk_sections=%s model_chain=%s",
-        session_id, len(file_paths_list), len(batches), chunk_sections,
-        MODEL_CHAIN,
+        session_id, len(file_paths_list), total, MAX_PARALLEL_BATCHES,
+        chunk_sections, _active_models(),
     )
 
     try:
-        # ── Model fallback loop ───────────────────────────────────────────────
-        for model_name in MODEL_CHAIN:
-            try:
-                logger.info(
-                    "model_attempt model=%s session=%s", model_name, session_id
+        client = _get_client()
+        sem = asyncio.Semaphore(max(1, MAX_PARALLEL_BATCHES))
+
+        async def run(i: int, batch: list[tuple[str, str]]) -> tuple[str, str]:
+            async with sem:
+                return await _run_single_batch(
+                    client=client, system_prompt=system_prompt, user_text=user_text,
+                    batch_files=batch, batch_num=i, total_batches=total,
+                    session_id=session_id, chunk_sections=chunk_sections,
                 )
-                # One client per run_analysis call
-                client = _get_client()
-                batch_outputs: list[str] = []
 
-                for i, batch in enumerate(batches, 1):
-                    logger.info(
-                        "file_batch_start batch=%d/%d model=%s session=%s",
-                        i, len(batches), model_name, session_id,
-                    )
-                    output = await _run_single_batch(
-                        client=client,
-                        model_name=model_name,
-                        system_prompt=system_prompt,
-                        user_text=user_text,
-                        batch_files=batch,
-                        batch_num=i,
-                        total_batches=len(batches),
-                        session_id=session_id,
-                        chunk_sections=chunk_sections,
-                    )
-                    batch_outputs.append(output)
-
-                if len(batch_outputs) == 1:
-                    final_output = batch_outputs[0]
-                else:
-                    # Multiple file batches — fuse into a single coherent report.
-                    try:
-                        final_output = await _consolidate_outputs(
-                            client=client,
-                            model_name=model_name,
-                            system_prompt=system_prompt,
-                            outputs=batch_outputs,
-                            session_id=session_id,
-                        )
-                        logger.info(
-                            "consolidation_complete model=%s session=%s batches=%d",
-                            model_name, session_id, len(batches),
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning(
-                            "consolidation_failed model=%s session=%s error=%s — using deterministic merge",
-                            model_name, session_id, exc,
-                        )
-                        final_output = _merge_batch_outputs(batch_outputs, len(batches))
-
-                logger.info(
-                    "run_analysis_complete model=%s session=%s file_batches=%d",
-                    model_name, session_id, len(batches),
-                )
-                return final_output, engine_label(model_name)
-
-            except Exception as exc:
-                last_err = exc
-                logger.warning(
-                    "model_failed model=%s session=%s error=%s",
-                    model_name, session_id, exc,
-                )
-                continue
-
-        raise RuntimeError(
-            f"All STRUCTMIND CORE tiers failed for session={session_id}. "
-            f"Last error: {last_err}"
+        results = await asyncio.gather(
+            *[run(i, b) for i, b in enumerate(batches, 1)], return_exceptions=True,
         )
+        failures = [(i, r) for i, r in enumerate(results, 1) if isinstance(r, BaseException)]
+        if failures:
+            # Never deliver a report that silently omits drawings.
+            detail = "; ".join(f"part {i}: {r}" for i, r in failures[:3])
+            raise RuntimeError(
+                f"STRUCTMIND CORE could not analyse {len(failures)} of {total} "
+                f"drawing part(s) for session={session_id}. {detail}"
+            )
+
+        outputs = [r[0] for r in results]
+        models_used = [r[1] for r in results]
+        # Report the weakest tier that contributed, so the label is honest.
+        chain = _active_models() + [m for m in MODEL_CHAIN if m not in _active_models()]
+        primary_model = max(models_used, key=lambda m: chain.index(m) if m in chain else 99)
+
+        if total == 1:
+            final_output = outputs[0]
+        else:
+            best = min(models_used, key=lambda m: chain.index(m) if m in chain else 99)
+            final_output, _ = await _consolidate_with_fallback(
+                client=client, system_prompt=system_prompt, outputs=outputs,
+                session_id=session_id, preferred_model=best,
+            )
+
+        logger.info(
+            "run_analysis_complete session=%s batches=%d models=%s elapsed=%.1fs chars=%d",
+            session_id, total, sorted(set(models_used)),
+            time.monotonic() - started, len(final_output),
+        )
+        return final_output, engine_label(primary_model)
     finally:
         if scratch_dir:
             shutil.rmtree(scratch_dir, ignore_errors=True)

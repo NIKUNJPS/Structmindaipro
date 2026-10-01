@@ -18,8 +18,13 @@ from estimation.ai_extract import extract_quantities
 logger = logging.getLogger(__name__)
 
 
+# Bump when the extraction method changes so stale locks are recomputed.
+# v2 = deterministic member-by-member take-off (estimation/takeoff.py).
+LOCK_VERSION = "v2"
+
+
 def _key(file_ids: list[str]) -> str:
-    return sha256_hex("|".join(sorted(file_ids)))
+    return sha256_hex(LOCK_VERSION + "|" + "|".join(sorted(file_ids)))
 
 
 async def get_or_lock_tonnage(
