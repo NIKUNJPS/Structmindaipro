@@ -185,6 +185,29 @@ merge is the last resort). All knobs are optional env vars:
 
 ---
 
+## PART 4c · Verified tonnage take-off (`backend/estimation/takeoff.py`)
+
+Tonnage is no longer model arithmetic. The AI lists every member (mark,
+profile, qty, length as drawn, sheet); the backend weighs each line:
+
+- **Unit weights** (`estimation/steel_sections.py`): AISC W/S/M/HP/C/MC/WT and metric
+  W/UB/UC carry mass in the name; HSS, pipe (ASME B36.10), angles, plates, flats and
+  round bars are computed from geometry; IPE/HEA/HEB/UPN/ISMB/ISMC/AU-PFC from catalogue.
+- **Lengths** are parsed from the drawing strings (`24'-6 1/2"`, `7468`, `7.468 m`).
+- **Double counting**: the same mark on the same sheet counts once; a BOM / member
+  schedule quantity overrides plan counts of that mark; the same mark on different
+  sheets (typical floors) is counted per sheet.
+- **Allowance**: 3% for connection material when not itemised, 1.5% (bolts + welds)
+  when plates are itemised — `TAKEOFF_CONNECTION_ALLOWANCE_PCT`,
+  `TAKEOFF_BOLT_WELD_ALLOWANCE_PCT`.
+- Unweighable lines (missing length/size) are listed as RFI candidates, never guessed.
+
+The same take-off is locked per drawing set and used by MASTER_INTAKE, MTO,
+FABRICATOR_ESTIMATION_PRO and `/api/estimation/ai-calculate`; MTO and Master Intake
+reports get the full member schedule appended.
+
+---
+
 ## PART 5 · Test credentials
 
 **Seeded super admins (auto-created on first boot):**

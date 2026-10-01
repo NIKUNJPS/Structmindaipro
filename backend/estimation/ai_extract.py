@@ -18,6 +18,7 @@ from typing import Iterable
 from google.genai import types
 
 from config import settings
+from estimation.takeoff import build_takeoff
 from gemini_service import (
     MAX_PARALLEL_BATCHES,
     _active_models,
@@ -37,34 +38,69 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 
 FABRICATOR_EXTRACT_PROMPT = """
-You are STRUCTMIND CORE, a senior structural-steel fabricator's estimator.
+You are STRUCTMIND CORE, a principal structural-steel estimator performing a
+quantity take-off. Your ONLY job is to READ the drawings and LIST every steel
+member exactly as drawn. Do NOT calculate weights or tonnage — a verified
+engine weighs every line from the section tables. Accuracy of profile,
+quantity and length is everything.
 
-Your task: read EVERY attached structural drawing, BOM, schedule and document and
-compute the total fabricated tonnage with a disciplined member-by-member take-off.
+READ EVERY SHEET: plans, elevations, sections, details, schedules, BOMs, cut
+lists, general notes. Do not skip or sample any sheet.
 
-METHOD (perform internally, do not narrate):
-  1. Scan every sheet and every document. Use the BOM / member schedule where present;
-     otherwise quantify members from framing plans and details.
-  2. For each member: identify profile, quantity and length, then apply the published
-     AISC / standard unit weight (kg/m) for that profile. Plates and bars: compute from
-     volume × 7,850 kg/m³. Convert all weights to metric tons.
-  3. Add a 3.0% allowance for bolts, welds, connection plates and accessories.
-  4. SUM every member. Do not sample, round members away, or estimate a bulk figure —
-     the tonnage must be the sum of the actual take-off.
-  5. Be exhaustive: include secondary steel, miscellaneous, embeds and anchors.
+WHAT TO LIST (one JSON object per member line):
+  - Columns, beams, girders, rafters, trusses (chords + webs), bracing,
+    purlins, girts, eave struts, joists (as steel sections), lintels,
+    stairs (stringers, landings), handrails, ladders, platforms, grating
+    frames, embeds, base plates, cap plates, gusset / shear / end plates,
+    stiffeners, and any other fabricated steel shown.
+  - Connection plates ONLY when sized on the drawings (thickness × width and
+    length). Do not invent connection material.
 
-Round the final tonnage to exactly two decimal places.
+COUNTING RULES — never double count:
+  1. If a BOM / member schedule / cut list exists, it is authoritative: list
+     its rows with their TOTAL quantity and source "bom". Then list plan-only
+     members that are NOT in the schedule.
+  2. Without a schedule, count members on framing PLANS (source "plan") —
+     one line per mark per sheet with the count shown on that sheet. Use
+     elevations / sections only to read lengths, never to count again.
+  3. A typical member repeated on several floors/plans is listed once per
+     sheet it appears on, with that sheet's count.
+  4. "TYP." / "SIM." members: count every occurrence that is drawn or
+     dimensioned; state the basis in "note".
 
-Return ONLY valid JSON (no markdown, no commentary):
+LENGTH: copy the length exactly as dimensioned on the drawing — e.g.
+  "24'-6 1/2\"" or "7468" (mm). Use the member's centre-to-centre / grid
+  dimension when no cut length is shown. Never leave length empty if any
+  dimension, grid spacing or level difference lets you determine it; when
+  derived, say how in "note".
 
+PROFILE: copy the designation exactly — W18x35, HSS6x6x3/8, L4x4x1/2,
+  C10x15.3, PIPE6STD, PL1/2x10, W310x97, UB457x191x67, 460UB67.1, IPE300,
+  HEB200, ISMB300, SHS100x100x6, CHS168.3x6. Plates: "PL<thk>x<width>" with
+  length = plate length.
+
+Return ONLY this JSON (no markdown):
 {
-  "tonnage": 184.52,
-  "members_counted": 250,
-  "primary_material": "A992 W-shapes",
+  "units": "imperial" | "metric",
   "drawings_seen": 12,
-  "accessory_allowance_pct": 3.0,
-  "notes": "Member-by-member take-off from BOM and framing plans; AISC unit weights applied."
+  "sheets": ["S-101", "S-201"],
+  "primary_material": "ASTM A992 W-shapes",
+  "members": [
+    {"mark": "B1", "profile": "W18x35", "qty": 4, "length": "24'-6\"",
+     "sheet": "S-201", "category": "beam", "source": "plan",
+     "grade": "A992", "unit_weight_kg_m": null, "note": ""}
+  ],
+  "notes": "scope observations, missing information, assumptions"
 }
+
+category is one of: column, beam, girder, rafter, truss, brace, purlin, girt,
+strut, joist, lintel, stair, handrail, ladder, platform, grating, embed,
+anchor, plate, connection, stiffener, base plate, misc.
+source is one of: bom, schedule, plan, elevation, section, detail.
+unit_weight_kg_m: fill ONLY for non-standard sections (built-up, cold-formed
+Z/C purlins, proprietary) using the value printed on the drawings, else null.
+For items measured by area (grating, checker plate, deck) add "weight_kg"
+when the drawings give enough data to compute it, and explain in "note".
 """
 
 DETAILER_EXTRACT_PROMPT = """
@@ -102,6 +138,36 @@ Return ONLY valid JSON.
 # HELPERS
 # ─────────────────────────────────────────────────────────────
 
+def _salvage_members(text: str) -> dict:
+    """Recover every complete member object from a truncated JSON response."""
+    start = text.find('"members"')
+    if start == -1:
+        raise ValueError("No JSON found in response")
+    arr = text.find("[", start)
+    decoder = json.JSONDecoder()
+    members, i = [], arr + 1
+    while i < len(text):
+        while i < len(text) and text[i] in " \r\n\t,":
+            i += 1
+        if i >= len(text) or text[i] != "{":
+            break
+        try:
+            obj, end = decoder.raw_decode(text, i)
+        except ValueError:
+            break
+        members.append(obj)
+        i = end
+    head = {}
+    for key in ("units", "primary_material"):
+        m = re.search(rf'"{key}"\s*:\s*"([^"]*)"', text)
+        if m:
+            head[key] = m.group(1)
+    m = re.search(r'"drawings_seen"\s*:\s*(\d+)', text)
+    if m:
+        head["drawings_seen"] = int(m.group(1))
+    return {**head, "members": members, "_truncated": True}
+
+
 def _extract_json(text: str) -> dict:
     """
     Extract JSON object from Gemini response.
@@ -120,11 +186,18 @@ def _extract_json(text: str) -> dict:
     end = cleaned.rfind("}")
 
     if start == -1 or end == -1:
+        if '"members"' in cleaned:
+            return _salvage_members(cleaned)
         raise ValueError("No JSON found in response")
 
     json_blob = cleaned[start:end + 1]
 
-    return json.loads(json_blob)
+    try:
+        return json.loads(json_blob)
+    except ValueError:
+        if '"members"' in cleaned:
+            return _salvage_members(cleaned)
+        raise
 
 
 # Numeric fields are additive across batches (each batch covers a different
@@ -136,6 +209,12 @@ _SUM_FIELDS = (
 
 
 def _combine_extractions(dicts: list[dict]) -> dict:
+    if any("members" in d for d in dicts):
+        return build_takeoff(dicts)
+    return _sum_extractions(dicts)
+
+
+def _sum_extractions(dicts: list[dict]) -> dict:
     """Deterministically fold per-batch extraction JSON into one result.
 
     No LLM merge pass — these are locked numeric figures, so batches are
@@ -224,16 +303,20 @@ No extra text.
                 last: Exception | None = None
                 for model_name in _active_models():
                     try:
-                        text, _ = await generate_once(
+                        text, truncated = await generate_once(
                             client=client,
                             model_name=model_name,
                             system_prompt=system_prompt,
                             contents=contents,
-                            max_output_tokens=32_768,
+                            max_output_tokens=65_536,
                             temperature=0.0,
+                            json_output=True,
                             label=f"extract batch={i}/{len(batches)}",
                         )
-                        return _extract_json(text), model_name
+                        data = _extract_json(text)
+                        if truncated:
+                            data["_truncated"] = True
+                        return data, model_name
                     except Exception as e:  # noqa: BLE001
                         last = e
                         logger.warning(

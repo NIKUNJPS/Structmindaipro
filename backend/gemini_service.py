@@ -139,6 +139,7 @@ def _generation_config(
     max_output_tokens: int,
     temperature: float | None,
     with_media: bool,
+    json_output: bool = False,
 ) -> types.GenerateContentConfig:
     """
     Build the request config for a model family.
@@ -160,6 +161,8 @@ def _generation_config(
         kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=budget)
         kwargs["temperature"] = 0.1 if temperature is None else temperature
 
+    if json_output:
+        kwargs["response_mime_type"] = "application/json"
     if with_media:
         res = _media_resolution()
         if res is not None:
@@ -529,6 +532,7 @@ async def generate_once(
     max_output_tokens: int = MAX_OUTPUT_TOKENS,
     temperature: float | None = None,
     with_media: bool = True,
+    json_output: bool = False,
     label: str = "",
 ) -> tuple[str, bool]:
     """
@@ -541,6 +545,7 @@ async def generate_once(
         max_output_tokens=max_output_tokens,
         temperature=temperature,
         with_media=with_media,
+        json_output=json_output,
     )
     for attempt in range(MAX_TRANSIENT_RETRIES + 1):
         try:
