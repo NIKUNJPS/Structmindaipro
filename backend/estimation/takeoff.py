@@ -15,6 +15,16 @@ from collections import defaultdict
 
 from .steel_sections import parse_length_mm, unit_weight
 
+KG_TO_LB = 2.20462
+
+
+def _lb(t: float) -> float:
+    return t * 1000.0 * KG_TO_LB
+
+
+def _short_tons(t: float) -> float:
+    return _lb(t) / 2000.0
+
 # Allowance for connection material not itemised on the drawings.
 CONNECTION_ALLOWANCE_PCT = float(os.environ.get("TAKEOFF_CONNECTION_ALLOWANCE_PCT", "3.0"))
 # When plates / connection material ARE itemised, only bolts + weld metal remain.
@@ -290,13 +300,17 @@ def takeoff_summary_markdown(t: dict, max_profiles: int = 60) -> str:
         f"- Total fabricated tonnage: **{t['tonnage']:,.2f} t** "
         f"(net steel {t['net_steel_t']:,.3f} t + {t['accessory_allowance_pct']:g}% allowance "
         f"{t['allowance_t']:,.3f} t for {t['allowance_basis']})",
+        f"- Imperial equivalent (use for USA lb / short-ton columns): "
+        f"**{_lb(t['tonnage']):,.0f} lb = {_short_tons(t['tonnage']):,.2f} short tons** total; "
+        f"net steel {_lb(t['net_steel_t']):,.0f} lb = {_short_tons(t['net_steel_t']):,.2f} short tons",
         f"- Members counted: **{t['members_counted']:,}** "
         f"({t['pieces_total']:,} pieces incl. plates, {t['line_items']:,} line items)",
         "",
-        "| Group | Pieces | Length (m) | Weight (t) |",
-        "|---|---:|---:|---:|",
+        "| Group | Pieces | Length (m) | Weight (t) | Weight (lb) | Short tons |",
+        "|---|---:|---:|---:|---:|---:|",
     ]
-    lines += [f"| {g['group']} | {g['pieces']:,} | {g['length_m']:,.1f} | {g['weight_t']:,.3f} |"
+    lines += [f"| {g['group']} | {g['pieces']:,} | {g['length_m']:,.1f} | {g['weight_t']:,.3f} | "
+              f"{_lb(g['weight_t']):,.0f} | {_short_tons(g['weight_t']):,.2f} |"
               for g in t["by_group"]]
     lines += ["", "| Profile | Pieces | Length (m) | kg/m | Weight (t) |", "|---|---:|---:|---:|---:|"]
     lines += [f"| {_cell(p['profile'])} | {p['pieces']:,} | {p['length_m']:,.1f} | {p['unit_kg_m']:,.2f} | {p['weight_t']:,.3f} |"
@@ -321,6 +335,7 @@ def takeoff_report_markdown(t: dict) -> str:
         f"| Net steel weight | {t['net_steel_t']:,.3f} t |",
         f"| Allowance ({t['accessory_allowance_pct']:g}% — {t['allowance_basis']}) | {t['allowance_t']:,.3f} t |",
         f"| **Total fabricated tonnage** | **{t['tonnage']:,.2f} t** |",
+        f"| Total fabricated weight (imperial) | {_lb(t['tonnage']):,.0f} lb = {_short_tons(t['tonnage']):,.2f} short tons |",
         f"| Members counted (excl. plates) | {t['members_counted']:,} |",
         f"| Total pieces (incl. plates) | {t['pieces_total']:,} |",
         f"| Line items | {t['line_items']:,} |",
@@ -328,15 +343,16 @@ def takeoff_report_markdown(t: dict) -> str:
         "",
         "Table: Tonnage by Category",
         "",
-        "| Category | Line Items | Pieces | Total Length (m) | Weight (t) | Share |",
-        "|---|---:|---:|---:|---:|---:|",
+        "| Category | Line Items | Pieces | Total Length (m) | Weight (t) | Weight (lb) | Share |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ]
     net = max(t["net_steel_t"], 1e-9)
     for g in t["by_group"]:
         out.append(f"| {g['group']} | {g['lines']:,} | {g['pieces']:,} | {g['length_m']:,.1f} | "
-                   f"{g['weight_t']:,.3f} | {g['weight_t'] / net * 100:.1f}% |")
+                   f"{g['weight_t']:,.3f} | {_lb(g['weight_t']):,.0f} | {g['weight_t'] / net * 100:.1f}% |")
     out.append(f"| **Total (net)** | **{t['line_items']:,}** | **{t['pieces_total']:,}** | "
-               f"**{sum(g['length_m'] for g in t['by_group']):,.1f}** | **{t['net_steel_t']:,.3f}** | **100%** |")
+               f"**{sum(g['length_m'] for g in t['by_group']):,.1f}** | **{t['net_steel_t']:,.3f}** | "
+               f"**{_lb(t['net_steel_t']):,.0f}** | **100%** |")
 
     out += ["", "Table: Tonnage by Profile", "",
             "| Profile | Category | Pieces | Total Length (m) | Unit Wt (kg/m) | Weight (t) |",
