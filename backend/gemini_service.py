@@ -674,6 +674,7 @@ async def _run_single_batch(
     total_batches: int,
     session_id: str,
     chunk_sections: bool = False,
+    digest: bool = False,
 ) -> tuple[str, str]:
     """
     Analyse one batch. Files are uploaded ONCE and reused across every model
@@ -681,7 +682,12 @@ async def _run_single_batch(
     """
     uploaded_files: list = await _upload_files(client, batch_files) if batch_files else []
     file_parts = _file_parts(uploaded_files)
-    base_text = _batch_user_text(user_text, batch_num, total_batches, batch_files)
+    base_text = (
+        _digest_user_text(batch_num, total_batches, batch_files) if digest
+        else _batch_user_text(user_text, batch_num, total_batches, batch_files)
+    )
+    if digest:
+        chunk_sections = False
     last_err: Exception | None = None
 
     try:
@@ -733,26 +739,24 @@ def _normalise_heading(h: str) -> str:
     return re.sub(r"\s+", " ", h).strip()
 
 
-def _merge_batch_outputs(outputs: list[str], total_batches: int = 0) -> str:
-    """Deterministic, lossless fallback merge.
+def _split_sections(outputs: list[str]):
+    """Group partial reports by their shared top-level section headings.
 
-    Partials follow the same mode template, so content is grouped under each
-    top-level section heading in order of first appearance: one heading per
-    section, with every partial's content for that section beneath it.
-    Nothing is dropped.
-    """
+    Returns (level, preamble, order, titles, bodies) or None when the partials
+    do not share a heading structure."""
     outputs = [o.strip() for o in outputs if o and o.strip()]
-    if len(outputs) <= 1:
-        return outputs[0] if outputs else ""
+    def section_level(o: str) -> int | None:
+        # Shallowest heading level used more than once; a single "# Title"
+        # heading is the report title, not a section.
+        levels = [len(m.group(1)) for m in _HEADING_RE.finditer(o)]
+        for lv in sorted(set(levels)):
+            if levels.count(lv) >= 2:
+                return lv
+        return min(levels) if levels else None
 
-    # Section level = the shallowest heading level that every partial uses
-    # (a lone "# Title" in one partial must not become the section level).
-    per_partial = [
-        min((len(m.group(1)) for m in _HEADING_RE.finditer(o)), default=None)
-        for o in outputs
-    ]
-    if any(lv is None for lv in per_partial):
-        return "\n\n---\n\n".join(outputs)
+    per_partial = [section_level(o) for o in outputs]
+    if not outputs or any(lv is None for lv in per_partial):
+        return None
     level = max(per_partial)
     split_re = re.compile(rf"^#{{{level}}}\s+(.*\S)\s*$", re.MULTILINE)
 
@@ -760,7 +764,6 @@ def _merge_batch_outputs(outputs: list[str], total_batches: int = 0) -> str:
     titles: dict[str, str] = {}
     bodies: dict[str, list[str]] = {}
     preamble: list[str] = []
-
     for out in outputs:
         matches = list(split_re.finditer(out))
         head = out[: matches[0].start()].strip() if matches else out
@@ -776,10 +779,183 @@ def _merge_batch_outputs(outputs: list[str], total_batches: int = 0) -> str:
                 bodies[key] = []
             if body:
                 bodies[key].append(body)
+    return level, preamble, order, titles, bodies
 
-    parts = list(preamble)
+
+def _table_header_key(line: str) -> str:
+    return re.sub(r"[\s*_`]", "", line).lower()
+
+
+def _merge_section_bodies(bodies: list[str]) -> str:
+    """Deterministically merge one section's content from several partials:
+    tables with the same header become ONE table (all rows, exact duplicate
+    rows removed); repeated identical text blocks appear once."""
+    if len(bodies) <= 1:
+        return bodies[0] if bodies else ""
+    blocks: list[list] = []          # ["text", str] | ["table", header, sep, rows]
+    table_at: dict[str, int] = {}
+    seen_text: set[str] = set()
+    for body in bodies:
+        lines = body.splitlines()
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if (line.strip().startswith("|") and i + 1 < len(lines)
+                    and re.match(r"^\s*\|?\s*:?-{2,}", lines[i + 1])):
+                header, sep = line.strip(), lines[i + 1].strip()
+                rows = []
+                i += 2
+                while i < len(lines) and lines[i].strip().startswith("|"):
+                    rows.append(lines[i].strip())
+                    i += 1
+                key = _table_header_key(header)
+                if key in table_at:
+                    target = blocks[table_at[key]][3]
+                    target.extend(r for r in rows if r not in target)
+                else:
+                    table_at[key] = len(blocks)
+                    blocks.append(["table", header, sep, rows])
+                continue
+            text = []
+            while i < len(lines) and not (
+                lines[i].strip().startswith("|") and i + 1 < len(lines)
+                and re.match(r"^\s*\|?\s*:?-{2,}", lines[i + 1])
+            ):
+                text.append(lines[i])
+                i += 1
+            chunk = "\n".join(text).strip()
+            if chunk and chunk not in seen_text:
+                seen_text.add(chunk)
+                blocks.append(["text", chunk])
+    out = []
+    for blk in blocks:
+        if blk[0] == "text":
+            out.append(blk[1])
+        else:
+            out.append("\n".join([blk[1], blk[2], *blk[3]]))
+    return "\n\n".join(out)
+
+
+def _merge_batch_outputs(outputs: list[str], total_batches: int = 0) -> str:
+    """Deterministic, lossless fallback merge: one heading per section, and
+    tables with matching headers combined into a single table."""
+    outputs = [o.strip() for o in outputs if o and o.strip()]
+    if len(outputs) <= 1:
+        return outputs[0] if outputs else ""
+    split = _split_sections(outputs)
+    if split is None:
+        return "\n\n---\n\n".join(outputs)
+    level, preamble, order, titles, bodies = split
+    parts = list(preamble[:1])
     for key in order:
-        parts.append(f"{'#' * level} {titles[key]}\n\n" + "\n\n".join(bodies[key]))
+        parts.append(f"{'#' * level} {titles[key]}\n\n" + _merge_section_bodies(bodies[key]))
+    return "\n\n".join(parts)
+
+
+_SECTION_MERGE_INSTRUCTION = (
+    "Below are {n} versions of the report section \"{title}\". Each version was "
+    "written from a different, consecutive part of the SAME project's drawing set. "
+    "Merge them into the ONE final version of this section.\n\n"
+    "STRICT REQUIREMENTS:\n"
+    "1. Every table becomes ONE unified table containing EVERY row from every "
+    "version, with all detail kept (marks, sizes, lengths, quantities, weights, "
+    "sheet references, notes). Remove only exact duplicates of the same item on "
+    "the same sheet.\n"
+    "2. Re-compute every total, subtotal, count, tonnage and cost from the merged "
+    "rows so the figures cover the whole project.\n"
+    "3. Keep every distinct finding, issue, RFI, risk and recommendation. This is a "
+    "MERGE, not a summary — the result must be at least as detailed as all "
+    "versions combined, except for genuine duplicates.\n"
+    "4. Narrative text must describe the whole project in one voice.\n"
+    "5. Keep the section's required table formats and sub-headings.\n"
+    "6. Never mention versions, parts, batches or splitting.\n"
+    "7. Output ONLY the section body — do NOT repeat the heading \"{title}\".\n\n"
+    "{body}"
+)
+
+
+async def _merge_one_section(
+    *,
+    client: genai.Client,
+    system_prompt: str,
+    title: str,
+    bodies: list[str],
+    models: list[str],
+    session_id: str,
+) -> tuple[str, bool]:
+    """Merge one section with the model; reject lossy results. Returns
+    (body, used_model). Falls back to the deterministic section merge."""
+    if len(bodies) <= 1:
+        return (bodies[0] if bodies else ""), False
+    total = sum(len(b) for b in bodies)
+    has_table = any(re.search(r"^\s*\|.*\|\s*$", b, re.MULTILINE) for b in bodies)
+    # Tables must keep their rows; prose legitimately shrinks when de-duplicated.
+    threshold = MIN_CONSOLIDATION_RATIO if has_table else 0.3
+    joined = "\n\n".join(
+        f"<<<VERSION {i} OF {len(bodies)}>>>\n{b}\n<<<END VERSION {i}>>>"
+        for i, b in enumerate(bodies, 1)
+    )
+    instruction = _SECTION_MERGE_INSTRUCTION.format(n=len(bodies), title=title, body=joined)
+    for model_name in models:
+        if model_name in _UNAVAILABLE_MODELS:
+            continue
+        try:
+            merged = await _generate_with_continuation(
+                client=client, model_name=model_name, system_prompt=system_prompt,
+                initial_parts=[types.Part(text=instruction)], session_id=session_id,
+                label=f"merge section={title[:40]}", with_media=False,
+            )
+            merged = _HEADING_RE.sub(
+                lambda m: "" if _normalise_heading(m.group(2)) == _normalise_heading(title) else m.group(0),
+                merged, count=1,
+            ).strip()
+            ratio = len(merged) / max(1, total)
+            if ratio >= threshold:
+                return merged, True
+            logger.warning("section_merge_lossy section=%s model=%s ratio=%.2f",
+                           title[:40], model_name, ratio)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("section_merge_failed section=%s model=%s error=%s",
+                           title[:40], model_name, exc)
+    logger.warning("section_merge_fallback=deterministic section=%s", title[:40])
+    return _merge_section_bodies(bodies), False
+
+
+async def _consolidate_sectionwise(
+    *,
+    client: genai.Client,
+    system_prompt: str,
+    outputs: list[str],
+    session_id: str,
+    preferred_model: str,
+) -> str | None:
+    """Merge partial reports section-by-section, in parallel. Each call only
+    rewrites one section, so the model keeps every row instead of
+    summarising the whole report. Returns None if partials share no
+    section structure."""
+    split = _split_sections(outputs)
+    if split is None:
+        return None
+    level, preamble, order, titles, bodies = split
+    if len(order) < 2:
+        return None
+    models = [preferred_model] + [m for m in _active_models() if m != preferred_model][:1]
+    sem = asyncio.Semaphore(max(2, MAX_PARALLEL_BATCHES))
+
+    async def run(key: str) -> tuple[str, bool]:
+        async with sem:
+            return await _merge_one_section(
+                client=client, system_prompt=system_prompt, title=titles[key],
+                bodies=bodies[key], models=models, session_id=session_id,
+            )
+
+    results = await asyncio.gather(*[run(k) for k in order])
+    merged_by_model = sum(1 for _, used in results if used)
+    logger.info("consolidation_sectionwise session=%s sections=%d model_merged=%d",
+                session_id, len(order), merged_by_model)
+    parts = list(preamble[:1])
+    for key, (body, _) in zip(order, results):
+        parts.append(f"{'#' * level} {titles[key]}\n\n{body}")
     return "\n\n".join(parts)
 
 
@@ -841,10 +1017,23 @@ async def _consolidate_with_fallback(
     session_id: str,
     preferred_model: str,
 ) -> tuple[str, str | None]:
-    """Try consolidation on each model (preferred first); reject lossy merges.
-    Falls back to the deterministic section merge. Returns (text, model|None)."""
+    """Merge partial reports into one. Section-by-section merging is used
+    whenever the partials share a section structure; otherwise a whole-report
+    merge (lossy results rejected), then the deterministic merge."""
+    try:
+        sectionwise = await _consolidate_sectionwise(
+            client=client, system_prompt=system_prompt, outputs=outputs,
+            session_id=session_id, preferred_model=preferred_model,
+        )
+        if sectionwise:
+            return sectionwise, preferred_model
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("consolidation_sectionwise_failed session=%s error=%s", session_id, exc)
+
     total_chars = sum(len(o) for o in outputs if o)
-    models = [preferred_model] + [m for m in _active_models() if m != preferred_model]
+    # One whole-report attempt only: every model tends to summarise a whole
+    # multi-part report the same way, so further retries just add minutes.
+    models = [preferred_model]
     for model_name in models:
         if model_name in _UNAVAILABLE_MODELS:
             continue
@@ -868,6 +1057,122 @@ async def _consolidate_with_fallback(
                            model_name, session_id, exc)
     logger.warning("consolidation_fallback=deterministic session=%s", session_id)
     return _merge_batch_outputs(outputs), None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Large drawing sets: extract digests in parallel, then write ONE report
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Writing a full report per batch and merging the reports afterwards produces
+# N executive summaries, N manifests and N sets of totals that cannot be
+# reconciled reliably. Instead, every batch produces a complete factual
+# EXTRACTION DIGEST (no report, no totals), and the report is written exactly
+# once from the digests of the whole drawing set.
+
+_DIGEST_INSTRUCTIONS = """
+## THIS STEP: DRAWING EXTRACTION DIGEST (NOT THE REPORT)
+These instructions OVERRIDE every output-format instruction above for this step.
+
+The drawing set is large, so it is being read in parts. Your job in THIS step
+is ONLY to extract a complete, factual record of the attached sheets. A later
+step will write the final report from the digests of ALL parts, following the
+report requirements given above. Do NOT write the report, do NOT write
+executive summaries, manifests, totals, hour/cost/tonnage calculations,
+recommendations or conclusions.
+
+Capture EVERYTHING the report requirements above will need from these sheets.
+Output exactly this structure:
+
+## DRAWING SET INFORMATION
+- Project name / number / address, client, architect, engineer (as printed)
+- Drawing status stamps (e.g. "Not for Construction", IFC, revision, dates)
+- Region / jurisdiction indicators, units, codes and standards cited
+- Sheet index entries listed on these sheets (including sheets referenced but not attached)
+
+## SHEET <sheet number> — <sheet title>   (repeat for EVERY attached sheet)
+- Type: plan / elevation / section / detail / schedule / notes / other; revision & date
+- Steel and metal items — one table row per item, never summarise or sample:
+  | Item Type | Mark | Profile / Size | Qty | Length / Dimensions | Grade / Finish | Location / Grid / Detail | Note |
+  Qty = the count shown on this sheet; write "Not shown" when a quantity is
+  not stated and explain in Note how it could be counted.
+- Connections and details called out (type, bolts, welds, plates)
+- Specifications, general notes, material and finish requirements
+- Conflicts, ambiguities, illegible or missing information on this sheet
+- Scope observations (e.g. sheet is architectural only, steel inferred from callouts)
+
+Rules: report facts exactly as drawn; cite sheet numbers; mark any inference
+as "(inferred)"; include every sheet even if it contains no steel (say so).
+"""
+
+
+def _digest_user_text(batch_num: int, total_batches: int, files: list[tuple[str, str]]) -> str:
+    names = ", ".join(os.path.basename(fp) for fp, _ in files)
+    return (
+        f"Produce the DRAWING EXTRACTION DIGEST for part {batch_num} of {total_batches} "
+        f"of the drawing set (files: {names}). Cover every attached sheet in full "
+        "detail, exactly in the required structure."
+    )
+
+
+_FINAL_REPORT_INSTRUCTION = """{user_text}
+
+The complete drawing set was read in {n} parts. Below are the EXTRACTION
+DIGESTS of ALL parts — together they are the full record of every sheet in
+the project. Write the requested report ONCE for the WHOLE project:
+
+- Follow the mode's section structure, tables and formatting exactly.
+- ONE of every section, table, manifest and summary — never repeat a section,
+  never present per-part figures, never mention parts, digests or batches.
+- Build every register / piece-count / take-off table from ALL items in ALL
+  digests (de-duplicate the same item appearing on more than one sheet; cite
+  source sheets).
+- Compute every quantity, hour, cost, tonnage and total ONCE, for the whole
+  project, from the combined items, and keep every figure consistent across
+  all sections.
+- Executive summary, risks, assumptions, RFIs and recommendations describe
+  the whole project; merge duplicates, keep every distinct item.
+- List all reviewed sheets from all digests.
+
+{digests}
+"""
+
+
+async def _write_final_report(
+    *,
+    client: genai.Client,
+    system_prompt: str,
+    user_text: str,
+    digests: list[str],
+    session_id: str,
+    preferred_model: str,
+) -> tuple[str, str]:
+    """Write the single project report from all part digests (text only)."""
+    joined = "\n\n".join(
+        f"<<<DIGEST PART {i} OF {len(digests)}>>>\n{d.strip()}\n<<<END DIGEST PART {i}>>>"
+        for i, d in enumerate(digests, 1)
+    )
+    instruction = _FINAL_REPORT_INSTRUCTION.format(
+        user_text=user_text.strip(), n=len(digests), digests=joined,
+    )
+    models = [preferred_model] + [m for m in _active_models() if m != preferred_model]
+    last_err: Exception | None = None
+    for model_name in models:
+        if model_name in _UNAVAILABLE_MODELS:
+            continue
+        try:
+            report = await _generate_with_continuation(
+                client=client, model_name=model_name, system_prompt=system_prompt,
+                initial_parts=[types.Part(text=instruction)], session_id=session_id,
+                label="final_report", with_media=False,
+            )
+            logger.info("final_report_complete model=%s session=%s chars=%d digest_chars=%d",
+                        model_name, session_id, len(report), len(joined))
+            return report, model_name
+        except Exception as exc:  # noqa: BLE001
+            last_err = exc
+            logger.warning("final_report_failed model=%s session=%s error=%s",
+                           model_name, session_id, exc)
+    raise RuntimeError(f"Could not write the final report: {last_err}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -903,12 +1208,18 @@ async def run_analysis(
         client = _get_client()
         sem = asyncio.Semaphore(max(1, MAX_PARALLEL_BATCHES))
 
+        multi = total > 1
+        # Multi-part sets: each part produces an extraction digest (the mode
+        # prompt is kept as context so the digest captures what it needs).
+        part_system = (system_prompt + "\n\n" + _DIGEST_INSTRUCTIONS) if multi else system_prompt
+
         async def run(i: int, batch: list[tuple[str, str]]) -> tuple[str, str]:
             async with sem:
                 return await _run_single_batch(
-                    client=client, system_prompt=system_prompt, user_text=user_text,
+                    client=client, system_prompt=part_system, user_text=user_text,
                     batch_files=batch, batch_num=i, total_batches=total,
                     session_id=session_id, chunk_sections=chunk_sections,
+                    digest=multi,
                 )
 
         results = await asyncio.gather(
@@ -933,10 +1244,12 @@ async def run_analysis(
             final_output = outputs[0]
         else:
             best = min(models_used, key=lambda m: chain.index(m) if m in chain else 99)
-            final_output, _ = await _consolidate_with_fallback(
-                client=client, system_prompt=system_prompt, outputs=outputs,
-                session_id=session_id, preferred_model=best,
+            final_output, writer = await _write_final_report(
+                client=client, system_prompt=system_prompt, user_text=user_text,
+                digests=outputs, session_id=session_id, preferred_model=best,
             )
+            models_used.append(writer)
+            primary_model = max(models_used, key=lambda m: chain.index(m) if m in chain else 99)
 
         logger.info(
             "run_analysis_complete session=%s batches=%d models=%s elapsed=%.1fs chars=%d",
