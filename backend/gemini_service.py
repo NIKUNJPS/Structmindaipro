@@ -674,6 +674,7 @@ async def _run_single_batch(
     total_batches: int,
     session_id: str,
     chunk_sections: bool = False,
+    digest: bool = False,
 ) -> tuple[str, str]:
     """
     Analyse one batch. Files are uploaded ONCE and reused across every model
@@ -681,7 +682,12 @@ async def _run_single_batch(
     """
     uploaded_files: list = await _upload_files(client, batch_files) if batch_files else []
     file_parts = _file_parts(uploaded_files)
-    base_text = _batch_user_text(user_text, batch_num, total_batches, batch_files)
+    base_text = (
+        _digest_user_text(batch_num, total_batches, batch_files) if digest
+        else _batch_user_text(user_text, batch_num, total_batches, batch_files)
+    )
+    if digest:
+        chunk_sections = False
     last_err: Exception | None = None
 
     try:
@@ -1054,6 +1060,122 @@ async def _consolidate_with_fallback(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Large drawing sets: extract digests in parallel, then write ONE report
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Writing a full report per batch and merging the reports afterwards produces
+# N executive summaries, N manifests and N sets of totals that cannot be
+# reconciled reliably. Instead, every batch produces a complete factual
+# EXTRACTION DIGEST (no report, no totals), and the report is written exactly
+# once from the digests of the whole drawing set.
+
+_DIGEST_INSTRUCTIONS = """
+## THIS STEP: DRAWING EXTRACTION DIGEST (NOT THE REPORT)
+These instructions OVERRIDE every output-format instruction above for this step.
+
+The drawing set is large, so it is being read in parts. Your job in THIS step
+is ONLY to extract a complete, factual record of the attached sheets. A later
+step will write the final report from the digests of ALL parts, following the
+report requirements given above. Do NOT write the report, do NOT write
+executive summaries, manifests, totals, hour/cost/tonnage calculations,
+recommendations or conclusions.
+
+Capture EVERYTHING the report requirements above will need from these sheets.
+Output exactly this structure:
+
+## DRAWING SET INFORMATION
+- Project name / number / address, client, architect, engineer (as printed)
+- Drawing status stamps (e.g. "Not for Construction", IFC, revision, dates)
+- Region / jurisdiction indicators, units, codes and standards cited
+- Sheet index entries listed on these sheets (including sheets referenced but not attached)
+
+## SHEET <sheet number> — <sheet title>   (repeat for EVERY attached sheet)
+- Type: plan / elevation / section / detail / schedule / notes / other; revision & date
+- Steel and metal items — one table row per item, never summarise or sample:
+  | Item Type | Mark | Profile / Size | Qty | Length / Dimensions | Grade / Finish | Location / Grid / Detail | Note |
+  Qty = the count shown on this sheet; write "Not shown" when a quantity is
+  not stated and explain in Note how it could be counted.
+- Connections and details called out (type, bolts, welds, plates)
+- Specifications, general notes, material and finish requirements
+- Conflicts, ambiguities, illegible or missing information on this sheet
+- Scope observations (e.g. sheet is architectural only, steel inferred from callouts)
+
+Rules: report facts exactly as drawn; cite sheet numbers; mark any inference
+as "(inferred)"; include every sheet even if it contains no steel (say so).
+"""
+
+
+def _digest_user_text(batch_num: int, total_batches: int, files: list[tuple[str, str]]) -> str:
+    names = ", ".join(os.path.basename(fp) for fp, _ in files)
+    return (
+        f"Produce the DRAWING EXTRACTION DIGEST for part {batch_num} of {total_batches} "
+        f"of the drawing set (files: {names}). Cover every attached sheet in full "
+        "detail, exactly in the required structure."
+    )
+
+
+_FINAL_REPORT_INSTRUCTION = """{user_text}
+
+The complete drawing set was read in {n} parts. Below are the EXTRACTION
+DIGESTS of ALL parts — together they are the full record of every sheet in
+the project. Write the requested report ONCE for the WHOLE project:
+
+- Follow the mode's section structure, tables and formatting exactly.
+- ONE of every section, table, manifest and summary — never repeat a section,
+  never present per-part figures, never mention parts, digests or batches.
+- Build every register / piece-count / take-off table from ALL items in ALL
+  digests (de-duplicate the same item appearing on more than one sheet; cite
+  source sheets).
+- Compute every quantity, hour, cost, tonnage and total ONCE, for the whole
+  project, from the combined items, and keep every figure consistent across
+  all sections.
+- Executive summary, risks, assumptions, RFIs and recommendations describe
+  the whole project; merge duplicates, keep every distinct item.
+- List all reviewed sheets from all digests.
+
+{digests}
+"""
+
+
+async def _write_final_report(
+    *,
+    client: genai.Client,
+    system_prompt: str,
+    user_text: str,
+    digests: list[str],
+    session_id: str,
+    preferred_model: str,
+) -> tuple[str, str]:
+    """Write the single project report from all part digests (text only)."""
+    joined = "\n\n".join(
+        f"<<<DIGEST PART {i} OF {len(digests)}>>>\n{d.strip()}\n<<<END DIGEST PART {i}>>>"
+        for i, d in enumerate(digests, 1)
+    )
+    instruction = _FINAL_REPORT_INSTRUCTION.format(
+        user_text=user_text.strip(), n=len(digests), digests=joined,
+    )
+    models = [preferred_model] + [m for m in _active_models() if m != preferred_model]
+    last_err: Exception | None = None
+    for model_name in models:
+        if model_name in _UNAVAILABLE_MODELS:
+            continue
+        try:
+            report = await _generate_with_continuation(
+                client=client, model_name=model_name, system_prompt=system_prompt,
+                initial_parts=[types.Part(text=instruction)], session_id=session_id,
+                label="final_report", with_media=False,
+            )
+            logger.info("final_report_complete model=%s session=%s chars=%d digest_chars=%d",
+                        model_name, session_id, len(report), len(joined))
+            return report, model_name
+        except Exception as exc:  # noqa: BLE001
+            last_err = exc
+            logger.warning("final_report_failed model=%s session=%s error=%s",
+                           model_name, session_id, exc)
+    raise RuntimeError(f"Could not write the final report: {last_err}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Public entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1086,12 +1208,18 @@ async def run_analysis(
         client = _get_client()
         sem = asyncio.Semaphore(max(1, MAX_PARALLEL_BATCHES))
 
+        multi = total > 1
+        # Multi-part sets: each part produces an extraction digest (the mode
+        # prompt is kept as context so the digest captures what it needs).
+        part_system = (system_prompt + "\n\n" + _DIGEST_INSTRUCTIONS) if multi else system_prompt
+
         async def run(i: int, batch: list[tuple[str, str]]) -> tuple[str, str]:
             async with sem:
                 return await _run_single_batch(
-                    client=client, system_prompt=system_prompt, user_text=user_text,
+                    client=client, system_prompt=part_system, user_text=user_text,
                     batch_files=batch, batch_num=i, total_batches=total,
                     session_id=session_id, chunk_sections=chunk_sections,
+                    digest=multi,
                 )
 
         results = await asyncio.gather(
@@ -1116,10 +1244,12 @@ async def run_analysis(
             final_output = outputs[0]
         else:
             best = min(models_used, key=lambda m: chain.index(m) if m in chain else 99)
-            final_output, _ = await _consolidate_with_fallback(
-                client=client, system_prompt=system_prompt, outputs=outputs,
-                session_id=session_id, preferred_model=best,
+            final_output, writer = await _write_final_report(
+                client=client, system_prompt=system_prompt, user_text=user_text,
+                digests=outputs, session_id=session_id, preferred_model=best,
             )
+            models_used.append(writer)
+            primary_model = max(models_used, key=lambda m: chain.index(m) if m in chain else 99)
 
         logger.info(
             "run_analysis_complete session=%s batches=%d models=%s elapsed=%.1fs chars=%d",
